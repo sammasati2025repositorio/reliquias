@@ -7,6 +7,7 @@ const CONFIG = {
 
   // --- PANTALLA -------------------------------------------------
   pantalla: {
+    hundir: 0.06,           // cuánto se apoyan personajes y objetos en el suelo (sube si aún parecen flotar)
     ancho: 356,        // cuánto mundo se ve (unidades). Se dibuja a la resolución completa del móvil
     alto: 192,
     tile: 24,          // tamaño de cada casilla en unidades (más grande = cámara más cerca)
@@ -63,8 +64,8 @@ const CONFIG = {
     paraguas:  { nombre: 'Paraguas de papel',  boton: 'PARAGUAS', desc: 'Te tapas: no te ven pero andas despacio',  duracion: 4, freno: 0.45, espera: 18 },
     geta:      { nombre: 'Geta de hierro',     boton: 'PISOTÓN',  desc: 'Un pisotón que aturde a los de cerca',     duracion: 3, radio: 2.8, espera: 22 },
     shuriken:  { nombre: 'Pergamino: Estrellas que no pinchan', boton: 'ESTRELLA', desc: 'No hace ni cosquillas pero el ruido los despista', duracion: 4, radio: 7, espera: 8,  precio: 35 },
-    pasoHumo:  { nombre: 'Pergamino: Paso de humo',             boton: 'TRASPASAR', desc: 'Atraviesas la pared que tengas delante',          duracion: 0.6, radio: 3, espera: 25, precio: 80 },
-    asesinato: { nombre: 'Pergamino: Saludo por la espalda',    boton: 'CORTE',    desc: 'Acaba con un espectro por detrás. Vuelve al rato', duracion: 14, radio: 1.7, espera: 50, precio: 150 }
+    pasoHumo:  { nombre: 'Pergamino: Paso de humo',             boton: 'TRASPASAR', desc: 'Atraviesas hasta 2 bloques de pared. Lo que lleves en alto se queda atrás', duracion: 0.6, radio: 3, muros: 2, espera: 25, precio: 80 },
+    asesinato: { nombre: 'Pergamino: Saludo por la espalda',    boton: 'CORTE',    desc: 'Cuando estés a la espalda de un espectro aparece EJECUTAR: acabas con él. Vuelve al rato', duracion: 14, radio: 2.2, angulo: 0.5, espera: 30, precio: 150 }
   },
 
   // --- TÉCNICAS (se aprenden una vez en la tienda y funcionan solas) ---
@@ -171,8 +172,25 @@ const CONFIG = {
   },
 
   // --- SONIDO ---------------------------------------------------
+  // ONLINE: un único servidor para todos. modo 'local' = pruebas entre pestañas del mismo navegador.
+  // Para jugar de verdad: crea un proyecto gratis en supabase.com y pon modo: 'supabase', url y clave (la "anon public key")
+  online: { activo: true, modo: 'supabase', url: 'https://ummxtjdygrnsuwbykhki.supabase.co', sala: 'reliquias-mundo',
+    clave: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtbXh0amR5Z3Juc3V3YnlraGtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1MTYyMDAsImV4cCI6MjExMDA5MjIwMH0.3XcPnlanmtjiQeNBaeA7PBXKCSrGorNPSRUsBujusXs' },   // clave pública (anon): es segura en el navegador
+
+  // Regalo para probar: se da una vez. Cambia 'version' para volver a darlo, o borra estas líneas para quitarlo
+  regaloPruebas: null,   // para pruebas: { version: 3, fichas: 500, monedas: 50000, armas: ['asesinato', 'pasoHumo', 'shuriken'] }
+
+  // Monedas: el juego cuenta en cobre. plata = cuántos cobres vale una de plata; oro = cuántos cobres vale una de oro
+  // Imágenes opcionales: assets/mundo/moneda-cobre.webp, moneda-plata.webp, moneda-oro.webp
+  monedas: { plata: 20, oro: 40 },
+  // Experiencia estilo Dofus (más suave): XP para el nivel n = base·(n-1)² + lineal·(n-1)
+  experiencia: { base: 40, lineal: 30, premioMonedas: 40, fichaCada: 2,
+    frases: ['El cedro te reconoce.', 'Los espectros empiezan a hablar de ti.', 'Momo te guarda el mejor melocotón.', 'El kappa finge que no te ha visto subir de nivel.', 'Tu sombrero de paja ya tiene historia.'] },
+
   // --- RUEDA DEL CEDRO (ruleta de la aldea) ----------------------
   ruleta: {
+    granPremio: { probabilidad: 0.0033, monedas: 100000 },
+    anchoCunaGrande: 10,   // grados que ocupa la cuña verde del gran premio en el dibujo   // 0.0033 = 0,33 % de que un giro dé 100.000 monedas
     fichasPorPlanta: 1,    // fichas que ganas al superar cada planta del Dojo
     fichasExtraDojo: 0     // fichas de más al completar las 3 plantas
   },
@@ -227,7 +245,7 @@ const CONFIG = {
     tienda: { titulo: 'La tienda del kappa', lineas: ['Aquí cambias monedas por mejoras (sigilo, velocidad, fuerza) y por técnicas en pergamino.', 'Las monedas se ganan en el dojo, en las misiones y en el puesto de zumos.'] },
     ruleta: { titulo: 'La Rueda del Cedro', lineas: ['Cada giro cuesta 1 ficha y da equipo, materiales o curiosidades.', 'Las fichas se ganan al superar cada planta del dojo y en el puesto de zumos.'] },
     equipo: { titulo: 'Tu bolsa', lineas: ['Toca un hueco (sombrero, arma, anillo…) para ver lo que puedes ponerte ahí.', 'En Atributos ves cómo te mejora el equipo. En Materiales, lo que llevas para la forja.'] },
-    zumos:  { titulo: 'Zumos de Momo', lineas: ['Pasa el dedo por la fruta para cortarla. Varias de un tajo dan combo.', 'Si se te caen 3, se acaba. No cortes los petardos. Los melocotones a veces salpican: ¡eso da puntos extra!'] }
+    zumos:  { titulo: 'Zumos de Momo', lineas: ['Pasa el dedo por la fruta para cortarla. Varias de un tajo dan combo.', 'Si se te caen 3, se acaba. No cortes las pócimas. Los melocotones a veces salpican: ¡eso da puntos extra!'] }
   },
   // Lanzar reliquias en el dojo. Orden: [grulla (1 punto), tetera (2), daruma (3)]
   lanzar: {

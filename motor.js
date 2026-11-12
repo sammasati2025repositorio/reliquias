@@ -14,7 +14,7 @@
   const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
   // ---------- estado general ----------
-  let cont, lienzo, ctx, g, ui, mandos, btnSprint, joyBase, joyPomo, btnLanzar, btnCambiar, lanzadas = [];
+  let cont, lienzo, ctx, g, ui, mandos, btnSprint, joyBase, joyPomo, btnLanzar, btnCambiar, btnAmigos, lanzadas = [];
   let IW = 356, IH = 192, AH = 192, K = 1, vertical = false, T = 24;
   let fase = 'menu';            // menu | jugando | pausa | finRonda | fin
   let L = null;                 // nivel cargado
@@ -35,12 +35,12 @@
   // v0.20: imagen reescalada una vez a su tamaño real en pantalla (las originales miden ~500 px y
   // se pintan a ~60). Reescalar en cada fotograma era la segunda causa del lag.
   const escaladas = new Map();
-  // v0.38: sombra de contacto. Una mancha ancha y suave + un núcleo oscuro justo bajo los pies:
+  // v0.58: sombra de contacto. Una mancha ancha y suave + un núcleo oscuro justo bajo los pies:
   // es lo que hace que un personaje parezca apoyado y no flotando.
   function pisar(x, y, ancho) {
     const r = ancho * .5, sg = g.createRadialGradient(x, y, 0, x, y, r);
     sg.addColorStop(0, 'rgba(10,8,6,.72)'); sg.addColorStop(.45, 'rgba(10,8,6,.4)'); sg.addColorStop(1, 'rgba(10,8,6,0)');
-    g.save(); g.translate(x, y); g.scale(1, .36); g.translate(-x, -y); g.fillStyle = sg; g.beginPath(); g.arc(x, y, r, 0, 2 * PI); g.fill(); g.restore();
+    g.save(); g.translate(x, y); g.scale(1, .26); g.translate(-x, -y); g.fillStyle = sg; g.beginPath(); g.arc(x, y, r, 0, 2 * PI); g.fill(); g.restore();
     elip(x, y, ancho * .26, ancho * .07, 'rgba(6,4,3,.66)');
   }
   // margen transparente bajo los pies de una imagen (sale de arte.js > pieArte)
@@ -74,7 +74,19 @@
   }
   const atributo = k => atributosEquipo[k] || 0;
   const equipoPoseido = id => id === 'dofus' ? !!prog.huevo : !!prog.inventario[id];
-  function ganarXP(xp) { prog.xp += Math.round(xp*(1+atributo('sabiduria')/100)); }
+  function ganarXP(xp) {
+    const antes = nivelDe(prog.xp), d = Math.round(xp * (1 + atributo('sabiduria') / 100)); prog.xp += d;
+    if (d > 0 && h) xpFlot.push({ txt: '+' + d + ' XP', x: IW / 2 + (Math.random() - .5) * 40, y: AH - 18, t: 1.5 });
+    const ahora = nivelDe(prog.xp);
+    if (ahora > antes) {   // subes de nivel: premio de cada nivel, fanfarria y panel
+      const E = CONFIG.experiencia || {}, lineas = [];
+      for (let n = antes + 1; n <= ahora; n++) lineas.push(...darPremio({ monedas: (E.premioMonedas || 40) * n, fichas: n % (E.fichaCada || 2) === 0 ? 1 : 0 }));
+      lineas.push('Más aguante y más resistencia');
+      const fr = E.frases || ['El cedro te reconoce.']; subidaNivel = { n: ahora, lineas, frase: fr[ahora % fr.length] };
+      destello = .6; [523, 659, 784, 1047].forEach((q, i) => setTimeout(() => pitido(q, .2, 'triangle', .55), i * 90)); if (navigator.vibrate) try { navigator.vibrate([30, 30, 60]); } catch (e) { }
+      setTimeout(() => { if (fase !== 'jugando' && fase !== 'fruta') pintarUI(); }, 50);
+    }
+  }
   const capacidadCarga = () => (!esVillano() && prog.favores.brizna ? 2 : 1) + (torre && !esVillano() ? (torre.mods.bolsa || 0) : 0);
   let ceremonia = null, escenaJade;
   const duracionJade = 7.4;
@@ -218,7 +230,7 @@
     const {x:tx,y:ty,pdv}=TALLER.tronco,x=(tx+.5)*T,y=(ty+.78)*T;
     const vida=prog.troncoPDV/pdv,alto=T*(vida>0?2.25:.85);
     const golpe=corteTronco ? Math.sin(corteTronco.t*43)*corteTronco.t*3 : 0;
-    if(vida>0) dibujaProp('cedro-entrenamiento',x+golpe,y,alto);
+    if(vida>0){ pisar(x, y - alto*.02, alto*1.25); dibujaProp('cedro-entrenamiento',x+golpe,y+alto*.03,alto); }
     else {
       const im=estampas['cedro-entrenamiento'];
       if(im?.naturalWidth){
@@ -269,8 +281,17 @@
   }
   function girarRueda() {
     if(panelMundo!=='ruleta'||!alAlcance(TALLER.puesto)||prog.fichas<1||giroRueda?.girando)return;
-    const i=TALLER.sortear(Math.random()), premio=TALLER.premios[i];
     prog.fichas--;
+    // v0.58: gran premio de la Rueda. config.js > ruleta.granPremio (probabilidad 0.0033 = 0,33 %)
+    const GP=(CONFIG.ruleta||{}).granPremio;
+    if(GP&&Math.random()<GP.probabilidad){
+      prog.puntos+=GP.monedas; prog.ultimoPremio={i:0,gordo:true,nombre:'¡GRAN PREMIO DEL CEDRO!',detalle:'+'+GP.monedas.toLocaleString('es')+' monedas de oro'}; guardarProg();
+      destello=1; temblor=.5; [523,659,784,1047,1319,1568,2093].forEach((q,k)=>setTimeout(()=>pitido(q,.3,'triangle',.6),2450+k*110));
+      const tirada={girando:true,i:0};giroRueda=tirada;pintarUI();pitido(230,.25,'triangle',.5);
+      setTimeout(()=>{if(giroRueda!==tirada)return;tirada.girando=false;if(panelMundo==='ruleta'){SON.entregar();pintarUI();}},2450);
+      return;
+    }
+    const i=TALLER.sortear(Math.random()), premio=TALLER.premios[i];
     let nombre=premio.nombre, detalle=premio.detalle;
     if(premio.tipo==='equipo') {
       if(equipoPoseido(premio.id)) {prog.puntos+=45;detalle='Repetido · convertido en 45 monedas';}
@@ -279,7 +300,7 @@
     else if(premio.tipo==='mineral')prog.materiales[premio.id]=(prog.materiales[premio.id]||0)+premio.n;
     else if(premio.tipo==='xp'){const previo=prog.xp;ganarXP(premio.n);detalle='+'+(prog.xp-previo)+' XP';}
     else if(premio.tipo==='monedas')prog.puntos+=premio.n;
-    prog.ultimoPremio={i,nombre,detalle};
+    prog.ultimoPremio={i,nombre,detalle,humor:premio.humor,icono:premio.icono,id:premio.id};
     guardarProg();
     const tirada={girando:true,i};giroRueda=tirada;pintarUI();pitido(230,.25,'triangle',.5);
     setTimeout(()=>{
@@ -289,14 +310,16 @@
     },window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?50:2450);
   }
   function htmlRuleta() {
-    const p=prog.ultimoPremio,girando=giroRueda?.girando, colores=TALLER.colores.map((c,i)=>c+' '+i*45+'deg '+(i+1)*45+'deg').join(',');
-    const rot=p?360-22.5-p.i*45:0;
-    const sectores=TALLER.premios.map((p,i)=>'<i style="--a:'+(i*45+22.5)+'deg">'+iconoObjeto(p.id,p.icono)+'</i>').join('');
+    // v0.58: la rueda reserva una cuña para el gran premio (se dibuja más ancha que su probabilidad real para que se vea)
+    const GP=(CONFIG.ruleta||{}).granPremio, cu=GP?((CONFIG.ruleta||{}).anchoCunaGrande||7):0, ss=(360-cu)/TALLER.premios.length;
+    const p=prog.ultimoPremio,girando=giroRueda?.girando, colores=TALLER.colores.map((c,i)=>c+' '+i*ss+'deg '+(i+1)*ss+'deg').join(',')+(cu?',#2f7a3a '+(360-cu)+'deg 360deg':'');
+    const rot=p?(p.gordo?360-(360-cu/2):360-ss/2-p.i*ss):0;
+    const sectores=TALLER.premios.map((p,i)=>'<i style="--a:'+(i*ss+ss/2)+'deg">'+iconoObjeto(p.id,p.icono)+'</i>').join('')+(cu?'<i class="rq-cuna" style="--a:'+(360-cu/2)+'deg">?</i>':'');
     return '<h2>Rueda del Cedro</h2><p>◈ '+prog.fichas+' '+(prog.fichas===1?'ficha':'fichas')+'</p>'+
       '<div class="rq-tombola"><div class="rq-puntero"></div><div class="rq-rueda '+(girando?'rodando':'')+'" style="--rot:'+rot+'deg;--sectores:'+colores+'">'+sectores+'<b>✦</b></div></div>'+
-      (girando?'<p aria-live="polite">La rueda está girando…</p>':p?'<p aria-live="polite"><b>'+esc(p.nombre)+'</b><br>'+esc(p.detalle)+'</p>':'<p>Una ficha por giro. Gana fichas en el Dojo.</p>')+
+      (girando?'<p aria-live="polite">La rueda está girando…</p>':p?'<div class="rq-premioRueda" aria-live="polite"><i>'+(p.gordo?'✦':iconoObjeto(p.id,p.icono||'◈'))+'</i><div><b>'+esc(p.nombre)+'</b><small>'+esc(p.detalle)+'</small>'+(p.humor?'<p>'+esc(p.humor)+'</p>':p.gordo?'<p>Cien mil monedas. El cedro ha hablado y te ha hecho rico. Gástalas con sabiduría o, mejor, sin ella.</p>':'')+'</div></div>':'<p>Una ficha por giro. Gana fichas en el Dojo.</p>')+
       '<button class="rq-b" data-a="girarRueda" '+(girando||!prog.fichas?'disabled':'')+'>Girar · 1 ficha</button>'+
-      '<details class="rq-prob"><summary>Premios y probabilidades</summary><ul class="rq-lista">'+TALLER.premios.map(p=>'<li>'+p.icono+' '+esc(p.nombre)+' · '+p.peso+' %</li>').join('')+'</ul></details>'+cerrarPanel();
+      '<details class="rq-prob"><summary>Premios y probabilidades</summary><ul class="rq-lista">'+((CONFIG.ruleta||{}).granPremio?'<li>✦ Gran premio: '+CONFIG.ruleta.granPremio.monedas.toLocaleString('es')+' monedas · '+(CONFIG.ruleta.granPremio.probabilidad*100).toFixed(2).replace('.',',')+' %</li>':'')+TALLER.premios.map(p=>'<li>'+p.icono+' '+esc(p.nombre)+' · '+p.peso+' %</li>').join('')+'</ul></details>'+cerrarPanel();
   }
 
   function cargarNivel(i, aldea) {
@@ -384,16 +407,22 @@
     o = o || {};
     dif = o.difficulty || o.dificultad || dif;
     mapaIni = o.map != null ? o.map : (o.mapa != null ? o.mapa : mapaIni);
-    expedicion = !!o.expedicion; torre = o.torre && TW() ? nuevaTorre() : null; ronda = torre && o.piso ? o.piso : 1; puntos = 0; entregadas = []; capturas = 0; if (o.bando) bando = o.bando;
+    expedicion = !!o.expedicion; torre = o.torre && TW() ? nuevaTorre() : null;
+    if (torre && prog.zumos) {   // los zumos de Momo se beben al entrar a la Torre (uno de cada)
+      const bebidos = [];
+      for (const z of (ZU()?.zumos || [])) if (prog.zumos[z.id] > 0) { prog.zumos[z.id]--; for (const k in z.mod) torre.mods[k] = (torre.mods[k] || 0) + z.mod[k]; bebidos.push(z.nombre); }
+      if (bebidos.length) { guardarProg(); setTimeout(() => decir('Bebes: ' + bebidos.join(', '), 3.5), 6000); }
+    } ronda = torre && o.piso ? o.piso : 1; puntos = 0; entregadas = []; capturas = 0; if (o.bando) bando = o.bando;
     iniciarRonda();
   }
   function iniciarRonda() {
     panelMundo = ''; ritual = null; gemasPiso = 0; recompensaPiso = null;
-    if (torre) { torre.gen = generarPiso(ronda, semilla((Date.now() % 1e9) + ronda * 7919)); cargarNivel(torre.gen); }
+    if (torre) { torre.gen = generarPiso(ronda, semilla((pareja ? pareja.semilla : Date.now() % 1e9) + ronda * 7919)); cargarNivel(torre.gen); }
     else cargarNivel(expedicion ? ronda-1 : mapaIni + (CONFIG.partida.cambiarMapaCadaRonda ? ronda - 1 : 0));
     tiempo = expedicion ? 125 + (ronda-1)*15 : CONFIG.partida.duracionRonda; h.inv = CONFIG.heroe.invulnerable;
     dlg = null; pintarDlg(); tienda = false; bot.ruta = []; trazo = null; mapaGeo = null; camarasVistas.clear(); sel = bando==='villano' ? (espectrosPorCercania()[0] ?? 0) : 0; racha = 0; temblor = 0; destello = 0; aviso.t = 0; ultimoTic = 0; miedo = 0; susto = 0;
     fase = 'jugando'; pintarUI(); if (!esVillano()) aconsejar('dojo');
+    if (!torre) cortina = null;   // que no se quede el nombre de la aldea en el dojo
     if (torre) prepararTorre();
     else if (expedicion) decir(ronda===3 ? 'La luna te oculta cuando sus losas brillan.' : 'Planta '+ronda+' · entrega '+(ronda+1)+' gemas en zona segura', 5);
   }
@@ -449,7 +478,7 @@
     for(let k=0;k<12;k++)if(ARTE_ISO.aguaEn(L,T,x+Math.cos(k*PI/6)*r,y+Math.sin(k*PI/6)*r))return true;
     return false;
   }
-  // ---------- v0.38 PASO DEL MIZUGUMO: esprintar sobre el agua (config.js > tecnicas.mizugumo) ----------
+  // ---------- v0.58 PASO DEL MIZUGUMO: esprintar sobre el agua (config.js > tecnicas.mizugumo) ----------
   const tieneTecnica = id => !!(prog.tecnicas || {})[id];
   function sobreAguaPermitido() { return L.exterior && tieneTecnica('mizugumo') && h && h.energia > 0 && (h.corre || h.enAgua); }
   function actualizarAgua(dt, mueveAntes) {
@@ -503,12 +532,13 @@
     if (h.carga.length < capacidadCarga()) {
       const gema = gemas.find(gm=>gm.estado==='suelo'&&(modT('iman')?abs(gm.tx-tx)+abs(gm.ty-ty)<=1:gm.tx===tx&&gm.ty===ty));
       if (gema) {
-        gema.estado='llevada'; h.carga.push(gema); SON.coger(); if (torre && gema.idolo) torreAlarma(); if (fase === 'jugando') aconsejar('lanzar');
+        gema.estado='llevada'; h.carga.push(gema); SON.coger(); if (torre && gema.idolo) torreAlarma(); if (fase === 'jugando') aconsejar('lanzar'); if (pareja && !pareja.anfitrion) ON()?.enviar('coger', { i: gemas.indexOf(gema) }, pareja.id);
         decir('Gemas en la bolsa: '+h.carga.length+'/'+capacidadCarga(),2);
       }
     }
     const destino = celda(tx,ty);
     if (h.carga.length && (destino===4 || (destino===3 && !esVillano()))) {
+      if (pareja && !pareja.anfitrion) ON()?.enviar('entregar', { i: h.carga.map(g2 => gemas.indexOf(g2)) }, pareja.id);
       let total = 0, cantidad = h.carga.length;
       for (const gema of h.carga) {
         racha++; gemasPiso++; if (!esVillano()) contar('reliquias'); if (torre) torreEntrega(gema);
@@ -545,7 +575,7 @@
     for (let i = 1; i < n; i++) { const t = i / n; if (solido(floor((ax + (bx - ax) * t) / T), floor((ay + (by - ay) * t) / T))) return false; }
     return true;
   }
-  // ---------- v0.38 LANZAR RELIQUIAS (dojo). Ajustes en config.js > lanzar ----------
+  // ---------- v0.58 LANZAR RELIQUIAS (dojo). Ajustes en config.js > lanzar ----------
   function lanzar() {
     if (fase !== 'jugando' || esVillano() || !h.carga.length) return;
     const Lz = CONFIG.lanzar || {}, gema = h.carga.pop(), casillas = (Lz.alcance || [4, 2, 2])[gema.valor - 1] || 2;
@@ -709,6 +739,7 @@
       for (let i = 0; i < 26 * I; i++) { const a = azar(0, 2 * PI), v = azar(30, 130); gotas.push({ x: h.x, y: h.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, t: azar(0.3, 0.7) }); }
     }
     for (const q of lanzadas) { q.gema.estado = 'suelo'; } lanzadas = [];
+    if (pareja && !pareja.anfitrion && h.carga.length) ON()?.enviar('soltar', { i: h.carga.map(g2 => gemas.indexOf(g2)) }, pareja.id);
     for (const gema of h.carga) gema.estado = 'suelo';
     h.carga = [];
     racha = 0;
@@ -722,7 +753,7 @@
     for (const o of espectros) { o.estado = 'patrulla'; o.ruta = []; }
   }
 
-  // ---------- v0.38 TORRE DEL DOJO: 15 pisos generados, objetivos, cartas, botín y jefes (datos en torre.js) ----------
+  // ---------- v0.58 TORRE DEL DOJO: 15 pisos generados, objetivos, cartas, botín y jefes (datos en torre.js) ----------
   let torre = null;
   const TW = () => (typeof TORRE !== 'undefined' ? TORRE : null);
   const modT = k => (torre && torre.mods[k]) || 0;
@@ -873,9 +904,12 @@
       torre.elegida = n >= TW().pisos.length;
       [784, 988, 1175].forEach((f, i) => setTimeout(() => pitido(f, .16, 'triangle', .5), 300 + i * 110));
     }
+    if (pareja?.anfitrion) ON()?.enviar('finPiso', { botin: torre.botin, resultado: { ...torre.resultado, ok: torre.resultado.ok } }, pareja.id);
     fase = 'finRonda'; pintarUI();
   }
   function cobrarTorre(factor) {
+    if (pareja?.anfitrion) ON()?.enviar('salirPareja', { botin: torre.botin, factor }, pareja.id);
+    pareja = null;
     const b = torre.botin, L2 = [];
     const p = { monedas: Math.round(b.monedas * factor), fichas: factor >= 1 ? b.fichas : 0, xp: Math.round(b.xp * factor) };
     L2.push(...darPremio(p));
@@ -885,6 +919,7 @@
   }
   function htmlTorre() {
     const r = torre.resultado, b = torre.botin, N = TW().pisos.length;
+    if (pareja && !pareja.anfitrion) return '<div class="rq-hanko">' + r.n + '</div><h2>' + (r.ok ? 'Piso ' + r.n + ' superado' : 'Se acabó el tiempo') + '</h2><div class="rq-botin"><b>Botín de la pareja</b><span>' + esc(textoMonedas(b.monedas)) + '</span>' + (b.fichas ? '<span>✦ ' + b.fichas + '</span>' : '') + '<span>' + b.xp + ' XP</span></div><p>Esperando a que <b>' + esc(pareja.nombre) + '</b> elija carta y decida si seguís…</p><button class="rq-b sec" data-a="cobrarTorre" data-id="1">Salir con mi parte</button>';
     const bolsa = '<div class="rq-botin"><b>Botín acumulado</b><span>◈ ' + b.monedas + '</span>' + (b.fichas ? '<span>✦ ' + b.fichas + '</span>' : '') + Object.entries(b.materiales).map(([k, v]) => '<span>' + esc(EQUIPO.materiales[k] || k) + ' ×' + v + '</span>').join('') + '<span>' + b.xp + ' XP</span></div>';
     if (!r.ok) {
       const f = modT('todoONada') ? 0 : TW().siFallas;
@@ -920,8 +955,96 @@
     dibujaProp('farol-piedra', x, y + 6, alto);
   }
 
+  // ---------- v0.58 ONLINE: conectados, amigos de la infancia, invitaciones y dojo en pareja (transporte en red.js) ----------
+  const ON = () => (typeof RED !== 'undefined' && (CONFIG.online || {}).activo !== false) ? RED : null;
+  let pareja = null;            // { id, nombre, anfitrion:bool, otro:{x,y,dir,mueve,carga,corre}, tEnvio }
+  let avisoRed = null;          // { tipo:'invita'|'amistad', de, nombre, semilla }
+  let panelAmigos = false;
+  function datosRed() { return { nombre: (sessionStorage.getItem('reliquias-nombre') || jugador || 'Viajero'), personaje: (CONFIG.aspectos?.[prog?.aspecto || 'ronin'] || {}).nombre || 'Rōnin', lugar: fase === 'jugando' ? 'dojo' : zonaId }; }
+  function iniciarRed() {
+    const R = ON(); if (!R || R.modo !== 'apagado' && R.id) return;
+    R.on('lista', () => { if (panelAmigos) pintarUI(); });
+    R.on('error', t => decir(t, 3));
+    R.on('amistad', ({ de, d }) => { avisoRed = { tipo: 'amistad', de, nombre: d.nombre }; pitido(880, .1, 'triangle', .4); pintarUI(); });
+    R.on('amistadSi', ({ de, d }) => { prog.amigos = prog.amigos || {}; prog.amigos[de] = { nombre: d.nombre }; guardarProg(); decir(d.nombre + ' ya es tu amigo de la infancia', 2.6); if (panelAmigos) pintarUI(); });
+    R.on('invita', ({ de, d }) => { if (fase === 'jugando' || pareja) { R.enviar('invitaNo', { motivo: 'ocupado' }, de); return; } avisoRed = { tipo: 'invita', de, nombre: d.nombre, semilla: d.semilla }; pitido(990, .12, 'triangle', .5); setTimeout(() => pitido(1320, .12, 'triangle', .5), 120); pintarUI(); });
+    R.on('invitaNo', ({ d }) => { decir(d.motivo === 'ocupado' ? 'Está ocupado ahora mismo' : 'Ha rechazado la invitación', 2.4); pareja = null; });
+    R.on('invitaSi', ({ de, d }) => { if (!pareja || pareja.id !== de) return; empezarPareja(pareja.semilla, true); });
+    // durante la partida en pareja
+    R.on('foto', ({ de, d }) => { if (pareja && pareja.id === de && !pareja.anfitrion) aplicarFoto(d); });
+    R.on('pos', ({ de, d }) => { if (pareja && pareja.id === de) pareja.otro = d; });
+    R.on('coger', ({ de, d }) => { if (pareja?.anfitrion && pareja.id === de) { const gm = gemas[d.i]; if (gm && gm.estado === 'suelo') { gm.estado = 'otro'; } } });
+    R.on('soltar', ({ de, d }) => { if (pareja?.anfitrion && pareja.id === de) for (const i of d.i) { const gm = gemas[i]; if (gm) { gm.estado = 'suelo'; if (d.tx != null) { gm.tx = d.tx; gm.ty = d.ty; } } } });
+    R.on('entregar', ({ de, d }) => { if (pareja?.anfitrion && pareja.id === de) entregaDelOtro(d.i); });
+    R.on('atrapado', ({ de }) => { if (pareja && !pareja.anfitrion && pareja.id === de) { const e = espectros.reduce((a, b) => hypot(b.x - h.x, b.y - h.y) < hypot(a.x - h.x, a.y - h.y) ? b : a, espectros[0]); if (e) atrapar(e); } });
+    R.on('piso', ({ de, d }) => { if (pareja && !pareja.anfitrion && pareja.id === de) { ronda = d.ronda; if (torre) { torre.mods = d.mods || torre.mods; } pareja.semilla = d.semilla; iniciarRonda(); } });
+    R.on('finPiso', ({ de, d }) => { if (pareja && !pareja.anfitrion && pareja.id === de && torre) { torre.botin = d.botin; torre.resultado = d.resultado; torre.elegida = true; torre.ofertas = []; torre.ultimaCarta = d.carta || ''; fase = 'finRonda'; pintarUI(); } });
+    R.on('salirPareja', ({ de, d }) => { if (pareja && pareja.id === de) { const b = d.botin; decir(pareja.nombre + ' ha salido del dojo', 3); if (torre && b) { torre.botin = b; cobrarTorre(d.factor ?? 1); } else irMenu(); pareja = null; } });
+    R.conectar(CONFIG.online || { modo: 'local' }, datosRed);
+  }
+  function invitar(id) {
+    const R = ON(), c = R && R.conectados().find(x => x.id === id); if (!c) return;
+    const semilla = (Date.now() % 1e9) | 0; pareja = { id, nombre: c.nombre, anfitrion: true, semilla, otro: null };
+    R.enviar('invita', { nombre: jugador, semilla }, id); decir('Invitación enviada a ' + c.nombre + '…', 3);
+  }
+  function empezarPareja(semilla, anfitrion) {
+    panelAmigos = false; avisoRed = null; pareja.anfitrion = anfitrion; pareja.semilla = semilla; pareja.tEnvio = 0;
+    empezar({ expedicion: true, torre: true, bando: 'heroe', difficulty: 'normal', semilla });
+    decir('Dojo en pareja con ' + pareja.nombre, 3.5);
+  }
+  // el anfitrión manda el estado del dojo 10 veces por segundo; el invitado solo manda su posición
+  function redPaso(dt) {
+    if (!pareja || fase !== 'jugando') return; const R = ON(); if (!R) return;
+    pareja.tEnvio -= dt; if (pareja.tEnvio > 0) return; pareja.tEnvio = .1;
+    const yoPos = { x: Math.round(h.x), y: Math.round(h.y), dir: +h.dir.toFixed(2), mueve: h.mueve, corre: h.corre, carga: h.carga.map(g2 => g2.valor) };
+    if (pareja.anfitrion) R.enviar('foto', { yo: yoPos, t: +tiempo.toFixed(1), p: puntos, gp: gemasPiso, esp: espectros.map(e => [Math.round(e.x), Math.round(e.y), +e.dir.toFixed(2), e.estado[0], e.muerto > 0 ? 1 : 0]), gem: gemas.map(g2 => [g2.estado === 'suelo' ? 1 : 0, g2.tx, g2.ty]), faro: torre ? torre.faro.map(f => f.apagado ? 1 : 0) : [] }, pareja.id);
+    else R.enviar('pos', yoPos, pareja.id);
+    // el anfitrión decide si los espectros atrapan o ven al invitado
+    if (pareja.anfitrion && pareja.otro) {
+      const o = pareja.otro, ox = o.x, oy = o.y, c = celda(floor(ox / T), floor(oy / T)), seguro = c === 3 || c === 4;
+      for (const e of espectros) {
+        if (e.muerto > 0 || seguro) continue; const d = hypot(e.x - ox, e.y - oy), P = PE(e);
+        if (d < T * .6 && !(pareja.inmune > 0)) { pareja.inmune = 2.5; R.enviar('atrapado', {}, pareja.id); e.estado = 'patrulla'; e.ruta = []; continue; }
+        if (e.estado !== 'persigue' && d < P.alcance * T && lineaLibre(e.x, e.y, ox, oy) && (d < P.oido * T || abs(difAng(Math.atan2(oy - e.y, ox - e.x), e.dir)) < P.angulo * PI / 360)) { e.estado = 'persigue'; e.vista = [floor(ox / T), floor(oy / T)]; e.tMem = P.memoria; SON.alerta(); }
+      }
+      if (pareja.inmune > 0) pareja.inmune -= .1;
+    }
+  }
+  function aplicarFoto(d) {
+    pareja.otro = d.yo; tiempo = d.t; puntos = d.p; gemasPiso = d.gp;
+    d.esp.forEach((v, i) => { const e = espectros[i]; if (!e) return; e.x += (v[0] - e.x) * .6; e.y += (v[1] - e.y) * .6; e.dir = v[2]; e.estado = v[3] === 'p' ? 'persigue' : v[3] === 'b' ? 'busca' : 'patrulla'; e.muerto = v[4] ? 1 : 0; e.anim += .1; });
+    d.gem.forEach((v, i) => { const gm = gemas[i]; if (!gm || gm.estado === 'llevada' || gm.estado === 'volando') return; gm.estado = v[0] ? 'suelo' : 'otro'; gm.tx = v[1]; gm.ty = v[2]; });
+    if (torre && d.faro) d.faro.forEach((a, i) => { if (torre.faro[i]) torre.faro[i].apagado = !!a; });
+  }
+  function entregaDelOtro(idx) {   // el invitado ha llevado reliquias a la base: el anfitrión las cuenta
+    for (const i of idx) { const gm = gemas[i]; if (!gm) continue; racha++; gemasPiso++; puntos += (CONFIG.gemas.puntos[gm.valor - 1] || gm.valor); gm.estado = 'espera'; gm.t = CONFIG.partida.reaparicionGema; if (torre) torreEntrega(gm); }
+    SON.entregar();
+  }
+  function htmlAmigos() {
+    const R = ON(), lista = R ? R.conectados() : [], amigos = prog.amigos || {}, conAmigos = lista.filter(c => amigos[c.id]), otros = lista.filter(c => !amigos[c.id]);
+    const fila = (c, esAmigo) => '<div class="rq-amigo"><i class="' + (c.visto ? 'on' : '') + '"></i><div><b>' + esc(c.nombre) + '</b><small>' + esc(c.personaje || '') + ' · ' + (c.lugar === 'dojo' ? 'en el dojo' : 'en ' + esc(nombreZona(c.lugar) || 'la aldea')) + '</small></div>' +
+      (esAmigo ? (c.lugar === 'dojo' ? '<em>ocupado</em>' : '<button class="rq-c" data-a="invitarAmigo" data-id="' + c.id + '">Invitar al dojo</button>') : '<button class="rq-c" data-a="pedirAmistad" data-id="' + c.id + '">＋ Amigo</button>') + '</div>';
+    const fuera = Object.entries(amigos).filter(([id]) => !lista.some(c => c.id === id)).map(([id, a]) => '<div class="rq-amigo off"><i></i><div><b>' + esc(a.nombre) + '</b><small>desconectado</small></div></div>').join('');
+    const estado = !R ? 'Sin conexión' : R.modo === 'local' ? 'Modo pruebas: solo ves otras pestañas de este navegador' : R.modo === 'supabase' ? 'Servidor único · ' + (lista.length + 1) + ' conectados' : 'Conectando…';
+    return '<div class="rq-hanko">友</div><h2>Amigos de la infancia</h2><p><small>' + esc(estado) + '</small></p>' +
+      '<h3>Tus amigos</h3>' + (conAmigos.map(c => fila(c, true)).join('') + fuera || '<p><small>Aún no tienes amigos. Añade a alguien de la lista de abajo.</small></p>') +
+      '<h3>Conectados ahora</h3>' + (otros.map(c => fila(c, false)).join('') || '<p><small>No hay nadie más conectado ahora mismo.</small></p>') +
+      '<button class="rq-b sec" data-a="cerrarAmigos">Cerrar</button>';
+  }
+  function htmlAvisoRed() {
+    const a = avisoRed;
+    if (a.tipo === 'amistad') return '<div class="rq-hanko">友</div><h2>Petición de amistad</h2><p><b>' + esc(a.nombre) + '</b> quiere ser tu amigo de la infancia.</p><button class="rq-b" data-a="amistadSi">Aceptar</button><button class="rq-b sec" data-a="avisoNo">Ahora no</button>';
+    return '<div class="rq-hanko">道</div><h2>¡Te invitan al dojo!</h2><p><b>' + esc(a.nombre) + '</b> quiere subir la Torre contigo. Compartís reliquias, tiempo y botín.</p><button class="rq-b" data-a="invitaSi">Entrar juntos</button><button class="rq-b sec" data-a="avisoNo">Rechazar</button>';
+  }
+  // el compañero se dibuja como un segundo héroe, con su nombre encima
+  function dibujaCompa() {
+    const o = pareja && pareja.otro; if (!o) return;
+    const viejo = h, otro = { ...h, x: o.x, y: o.y, dir: o.dir, mueve: o.mueve, corre: o.corre, carga: (o.carga || []).map(v => ({ valor: v })), anim: (reloj * 11) % 1000, inv: 0, oculto: 0, lanzando: 0 };
+    h = otro; try { dibujaHeroe(o.x, o.y); } finally { h = viejo; }
+    escribe(pareja.nombre, o.x, o.y - T * 1.75, 7, '#9fe0ff', 'center', true);
+  }
   // ---------- bucle ----------
-  // ---------- v0.38 CONSEJOS: se explican las cosas la primera vez que las ves (textos en config.js > consejos) ----------
+  // ---------- v0.58 CONSEJOS: se explican las cosas la primera vez que las ves (textos en config.js > consejos) ----------
   let consejo = null;
   function aconsejar(clave) {
     const C = (CONFIG.consejos || {})[clave]; if (!C || !prog) return;
@@ -957,7 +1080,8 @@
       for (const gm of gemas) if (gm.estado === 'espera') { gm.t -= dt; if (gm.t <= 0) reaparecerGema(gm); }
       for (const b of turbos) if (b.t > 0) b.t -= dt;
       for (const p of portales) if (p.t > 0) p.t -= dt;
-      if (armaCd > 0) armaCd -= dt;
+      if (armaCd > 0) armaCd -= dt; if (cdCorte > 0) cdCorte -= dt;
+      if (btnCorte) btnCorte.classList.toggle('on', !esVillano() && !!objetivoCorte());
       for (const ef of efectos) ef.t -= dt; efectos = efectos.filter(ef => ef.t > 0);
       for (const q of proyectiles) {   // estrella ninja: no hace daño, pero el ruido donde cae los despista
         q.x += q.vx * dt; q.y += q.vy * dt; q.t -= dt;
@@ -974,9 +1098,11 @@
         if (!tp.hecho && tp.t >= tp.dur * 0.6) { tp.hecho = true; h.x = (tp.b.tx + .5) * T; h.y = (tp.b.ty + .5) * T; SON.tp2(); }
         if (tp.t >= tp.dur) tp = null;
       } else actualizarHeroe(dt);
-      for (const e of espectros) actualizarEspectro(e, dt);
+      const invitado = pareja && !pareja.anfitrion;
+      if (!invitado) for (const e of espectros) actualizarEspectro(e, dt);
+      redPaso(dt);
       if (tiempo <= 10 && tiempo > 0 && floor(tiempo) !== ultimoTic) { ultimoTic = floor(tiempo); SON.tic(); }
-      if (tiempo <= 0 || (torre ? objetivoTorre() : expedicion && gemasPiso >= ronda+1)) { tiempo = Math.max(0,tiempo); terminarRonda(); }
+      if (!invitado && (tiempo <= 0 || (torre ? objetivoTorre() : expedicion && gemasPiso >= ronda+1))) { tiempo = Math.max(0,tiempo); terminarRonda(); }
     } else if (fase === 'aldea') {
       moverTaller(dt);
       if (!dlg && !tienda && !panelMundo) {
@@ -1051,7 +1177,10 @@
     g.strokeStyle = '#3a2a30'; g.lineWidth = .4 * s; g.beginPath(); g.arc(x, y + 1 * s, .9 * s, .15 * PI, .85 * PI); g.stroke();
   }
 
+  const imgRel = {};
   function dibujaGema(x, y, s, valor, completo) {
+    { const id = ['grulla', 'tetera', 'daruma'][valor - 1], k = 'assets/mundo/reliquia-' + id + '.webp', src = id && arteIntegrado[k];   // v0.58: reliquias con imagen
+      if (src) { let im = imgRel[k]; if (!im) { im = imgRel[k] = new Image(); im.src = src; } if (im.naturalWidth) { const a = s * (valor === 1 ? 3.4 : 3), w = a * im.naturalWidth / Math.max(im.naturalWidth, im.naturalHeight), hh = a * im.naturalHeight / Math.max(im.naturalWidth, im.naturalHeight); g.drawImage(im, x - w / 2, y - hh * .62, w, hh); return; } } }
     const c = col()['gema' + valor] || '#ffffff';
     if (!imagenes.gema && CONFIG.gemas.estilo === 'reliquias') return dibujaReliquia(x, y, s * 1.15, valor, completo);
     if (imagenes.gema) { g.drawImage(imagenes.gema, x - s * 1.3, y - s * 1.3, s * 2.6, s * 2.6); return; }
@@ -1072,7 +1201,7 @@
     pisar(x, y + 7 * s, 15 * s);
     const fantasma = h.oculto > 0 && !tp; if (fantasma) g.globalAlpha = .5;
     const pid = CONFIG.aspectos?.ronin?.dibujo;
-    // v0.38: animaciones del héroe por tiras (assets/mundo/ronin-*.webp, fila de casillas de 256 px). Ajustes en config.js > animacionHeroe
+    // v0.58: animaciones del héroe por tiras (assets/mundo/ronin-*.webp, fila de casillas de 256 px). Ajustes en config.js > animacionHeroe
     const AN=CONFIG.animacionHeroe||{}, anims=AN.tiras||{};
     let clave = h.lanzando>0 ? 'lanzar' : h.carga.length ? 'cargar' : h.mueve ? 'correr' : 'quieto';
     let A=anims[clave], tira=A&&estampas[A.imagen];
@@ -1328,15 +1457,68 @@
     poli([x,y-r*.72,x+r*.55,y,x,y+r*.72,x-r*.55,y],'#ffe6a0');
   }
 
-  // ---------- v0.38 ECONOMÍA: rangos, premio diario, logros y mercado (datos en economia.js) ----------
+  // ---------- v0.58 MONEDAS: 1 oro = 2 plata = 40 cobre (el juego guarda todo en cobre). Ajustes en config.js > monedas ----------
+  function desglose(c) { const M = CONFIG.monedas || { plata: 20, oro: 40 }; c = Math.max(0, Math.floor(c)); const o = floor(c / M.oro); c -= o * M.oro; const p = floor(c / M.plata); c -= p * M.plata; return { o, p, c }; }
+  function textoMonedas(c) { const d = desglose(c), t = []; if (d.o) t.push(d.o.toLocaleString('es') + ' oro'); if (d.p) t.push(d.p + ' plata'); if (d.c || !t.length) t.push(d.c + ' cobre'); return t.join(' · '); }
+  const imgMoneda = {};
+  function moneda(tipo, x, y, r) {   // assets/mundo/moneda-<tipo>.webp si existe; si no, se dibuja en código
+    const k = 'assets/mundo/moneda-' + tipo + '.webp', src = arteIntegrado[k];
+    if (src) { let im = imgMoneda[k]; if (!im) { im = imgMoneda[k] = new Image(); im.src = src; } if (im.naturalWidth) { g.drawImage(im, x - r, y - r, r * 2, r * 2); return; } }
+    const borde = tipo === 'oro' ? ['#fff2b0', '#d9a520', '#7a5410'] : tipo === 'plata' ? ['#ffffff', '#b8c0c8', '#5a6068'] : ['#f3c3a0', '#c06a38', '#5a2a14'];
+    let gr = g.createRadialGradient(x - r * .4, y - r * .4, r * .1, x, y, r); gr.addColorStop(0, borde[0]); gr.addColorStop(.6, borde[1]); gr.addColorStop(1, borde[2]);
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 2 * PI); g.fill();
+    gr = g.createRadialGradient(x - r * .3, y - r * .3, r * .05, x, y, r * .72); gr.addColorStop(0, '#f0a070'); gr.addColorStop(1, '#a8501e');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r * .72, 0, 2 * PI); g.fill();
+    g.fillStyle = 'rgba(40,16,6,.85)'; g.fillRect(x - r * .2, y - r * .2, r * .4, r * .4);   // agujero cuadrado, como las monedas mon
+    g.strokeStyle = 'rgba(255,240,200,.55)'; g.lineWidth = Math.max(.5, r * .08); g.beginPath(); g.arc(x, y, r * .86, PI * 1.1, PI * 1.6); g.stroke();
+  }
+  // monedas arriba a la derecha, en una tablilla de madera
+  function dibujaBolsa() {
+    if (!prog || (fase !== 'aldea' && fase !== 'menu')) return;
+    const d = desglose(prog.puntos), items = [['oro', d.o], ['plata', d.p], ['cobre', d.c]].filter(([, n], i) => n || i === 2);
+    // tamaño: igual de alto que los botones de arriba (en el móvil vertical, un poco más grande)
+    let f = 1, y0 = 4, x0, fin = 0;
+    try { const rc = lienzo.getBoundingClientRect(), k = IH / rc.height, bt = mandos.querySelector('.rq-m'), rb = bt.getBoundingClientRect(), rm = mandos.getBoundingClientRect();
+      f = limita(rb.height * k / 21, .6, 1.4); if (!vertical) { y0 = (rb.top - rc.top) * k; fin = (rm.right - rc.left) * k; } } catch (e) { }
+    g.font = '700 ' + (10 * f) + 'px Georgia,serif'; let w = 8 * f; for (const [, n] of items) w += (19 + 6) * f + g.measureText(n.toLocaleString('es')).width;
+    const H = 21 * f;
+    x0 = vertical ? (IW - w) / 2 : IW - w - 6;
+    if (!vertical && x0 < fin + 4) { try { const rc = lienzo.getBoundingClientRect(), rm = mandos.getBoundingClientRect(); y0 = (rm.bottom - rc.top) * IH / rc.height + 3; } catch (e) { } }   // no cabe en la fila: justo debajo
+    g.fillStyle = 'rgba(30,18,10,.82)'; g.beginPath(); g.roundRect(x0, y0, w, H, H / 2); g.fill(); g.strokeStyle = 'rgba(214,170,100,.85)'; g.lineWidth = .8; g.stroke();
+    let x = x0 + 6 * f; g.textBaseline = 'middle'; g.textAlign = 'left';
+    for (const [t, n] of items) { moneda(t, x + 7.5 * f, y0 + H / 2, 7.5 * f); x += 18 * f; const s2 = n.toLocaleString('es'); g.lineWidth = 2.5 * f; g.strokeStyle = 'rgba(0,0,0,.6)'; g.strokeText(s2, x, y0 + H / 2 + .5); g.fillStyle = t === 'oro' ? '#ffe08a' : t === 'plata' ? '#e8eef5' : '#f0b088'; g.fillText(s2, x, y0 + H / 2 + .5); x += g.measureText(s2).width + 7 * f; }
+  }
+
+  // ---------- v0.58 EXPERIENCIA estilo Dofus: barra siempre visible, «+XP» flotante y subida de nivel con premio ----------
+  let xpFlot = [], subidaNivel = null;
+  const xpNivel = n => (CONFIG.experiencia?.base ?? 40) * (n - 1) * (n - 1) + (CONFIG.experiencia?.lineal ?? 30) * (n - 1);
+  function nivelDe(xp) { let n = 1; while (n < 200 && xp >= xpNivel(n + 1)) n++; return n; }
+  function dibujaXP() {
+    if (!prog || fase === 'menu' || fase === 'fruta') return;
+    const n = nivelDe(prog.xp), a = xpNivel(n), b = xpNivel(n + 1), k = limita((prog.xp - a) / (b - a), 0, 1);
+    prog._xpVis = prog._xpVis == null || k < prog._xpVis ? k : prog._xpVis + (k - prog._xpVis) * .08;
+    const w = Math.min(170, IW * .5), x = (IW - w) / 2, y = AH - 7;
+    g.fillStyle = 'rgba(20,12,8,.75)'; g.beginPath(); g.roundRect(x - 1, y - 1, w + 2, 6, 3); g.fill();
+    const gr = g.createLinearGradient(x, 0, x + w, 0); gr.addColorStop(0, '#5fbf4a'); gr.addColorStop(1, '#c8f070');
+    g.fillStyle = gr; g.beginPath(); g.roundRect(x, y, Math.max(2, w * prog._xpVis), 4, 2); g.fill();
+    g.font = '700 ' + (IW < 300 ? 8.5 : 7.5) + 'px Georgia,serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,.6)';
+    const t = 'Nv. ' + n + ' · ' + Math.floor(k * 100) + ' %'; g.strokeText(t, IW / 2, y - 1.5); g.fillStyle = '#dff5b8'; g.fillText(t, IW / 2, y - 1.5);
+    for (const f of xpFlot) { f.t -= 1 / 60; const yy = f.y - (1.5 - f.t) * 16; g.globalAlpha = Math.min(1, f.t * 2); g.font = 'italic 700 9px Georgia,serif'; g.textBaseline = 'middle'; g.strokeText(f.txt, f.x, yy); g.fillStyle = '#c8f070'; g.fillText(f.txt, f.x, yy); g.globalAlpha = 1; }
+    xpFlot = xpFlot.filter(f => f.t > 0);
+  }
+  function htmlSubida() {
+    const s2 = subidaNivel;
+    return '<div class="rq-hanko">昇</div><h2>¡Nivel ' + s2.n + '!</h2><p class="rq-rareza" style="color:#3f7a33">Rango: ' + esc(rango().nombre) + '</p><ul class="rq-premios">' + s2.lineas.map((l, i) => '<li class="rq-pop" style="animation-delay:' + (i * .2) + 's">' + esc(l) + '</li>').join('') + '</ul><p><small>' + esc(s2.frase) + '</small></p><button class="rq-b" data-a="cerrarSubida">¡Adelante!</button>';
+  }
+  // ---------- v0.58 ECONOMÍA: rangos, premio diario, logros y mercado (datos en economia.js) ----------
   const EC = () => (typeof ECONOMIA !== 'undefined' ? ECONOMIA : null);
   let panelEco = null;   // 'diaria' | 'logros'
-  function rangoActual() { const E = EC(), n = MUNDO.nivel(prog.xp); let r = 0; if (E) E.rangos.forEach((x, i) => { if (n >= x.desde) r = i; }); return r; }
+  function rangoActual() { const E = EC(), n = nivelDe(prog.xp); let r = 0; if (E) E.rangos.forEach((x, i) => { if (n >= x.desde) r = i; }); return r; }
   const rango = () => (EC()?.rangos[rangoActual()]) || { nombre: 'Viajero', mult: 1 };
   // da un premio {monedas, fichas, xp, material:[id,n], objeto:[rarezas], siRepetido} y devuelve las líneas para enseñarlo
   function darPremio(p, mult = 1) {
     const L2 = [];
-    if (p.monedas) { const mo = Math.round(p.monedas * mult); prog.puntos += mo; L2.push('◈ +' + mo + ' monedas'); }
+    if (p.monedas) { const mo = Math.round(p.monedas * mult); prog.puntos += mo; L2.push('+ ' + textoMonedas(mo)); }
     if (p.fichas) { prog.fichas += p.fichas; L2.push('✦ +' + p.fichas + (p.fichas > 1 ? ' fichas' : ' ficha') + ' de la Rueda'); }
     if (p.xp) { const a = prog.xp; ganarXP(p.xp); L2.push('+' + (prog.xp - a) + ' XP'); }
     if (p.material) { const [k, n] = p.material; prog.materiales[k] = (prog.materiales[k] || 0) + n; L2.push((EQUIPO.materiales[k] || k) + ' × ' + n); }
@@ -1374,7 +1556,7 @@
       return '<div class="rq-logro' + (cobrado ? ' cobrado' : ok ? ' listo' : '') + '"><div><b>' + esc(l.nombre) + '</b><small>' + v + ' / ' + l.meta + ' · ' + pr + '</small><progress value="' + v + '" max="' + l.meta + '"></progress></div>' +
         (cobrado ? '<em>✓</em>' : ok ? '<button class="rq-c" data-a="cobrarLogro" data-id="' + l.id + '">Cobrar</button>' : '') + '</div>';
     }).join('');
-    return '<div class="rq-hanko">賞</div><h2>Recompensas</h2><p>Rango <b>' + esc(rango().nombre) + '</b> (nivel ' + MUNDO.nivel(prog.xp) + ') · premios ×' + rango().mult + '</p>' + filas + '<button class="rq-b sec" data-a="cerrarEco">Volver</button>';
+    return '<div class="rq-hanko">賞</div><h2>Recompensas</h2><p>Rango <b>' + esc(rango().nombre) + '</b> (nivel ' + nivelDe(prog.xp) + ') · premios ×' + rango().mult + '</p>' + filas + '<button class="rq-b sec" data-a="cerrarEco">Volver</button>';
   }
   // ofertas del mercado: cambian cada día y según tu rango
   function ofertasDelDia() {
@@ -1406,7 +1588,7 @@
     for (const k in E.mercado.venta) o += '<div class="rq-item"><div style="flex:1"><b>' + esc(EQUIPO.materiales[k] || k) + '</b> <small>tienes ' + (prog.materiales[k] || 0) + '</small></div><button class="rq-c" data-a="venderMaterial" data-id="' + k + '"' + (prog.materiales[k] > 0 ? '' : ' disabled') + '>+' + E.mercado.venta[k] + ' monedas</button></div>';
     return o;
   }
-  // ---------- v0.38 COFRES por el mapa (ajustes y premios en config.js > cofres) ----------
+  // ---------- v0.58 COFRES por el mapa (ajustes y premios en config.js > cofres) ----------
   let cofres = [], cofreAbierto = null;
   const hoy = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
   function colocarCofres() {
@@ -1474,10 +1656,14 @@
     if (!im?.naturalWidth) { R(x - 8, y - 10, 16, 12, '#7a4a28'); return; }
     const n = K.fotogramas || 24, celda = im.naturalWidth / n, dur = K.duracionApertura || 1.4;
     const fr = c.t < 0 ? 0 : Math.min(n - 1, floor(c.t / dur * n)), ancho = T * (K.tamano || 1.35), sx = fr * celda;
-    pisar(x, y + 6, ancho * .8);
-    // cerrado: brilla un poco para que se vea; al abrir, una luz dorada sale de dentro
-    if (!c.abierto) { const p = .5 + Math.sin(reloj * 3 + c.tx) * .5; g.fillStyle = 'rgba(255,225,140,' + (.12 + p * .12) + ')'; g.beginPath(); g.ellipse(x, y - ancho * .3, ancho * .6, ancho * .45, 0, 0, 2 * PI); g.fill(); }
-    g.drawImage(im, sx, 0, celda, celda, x - ancho / 2, y + 6 - ancho * (184 / 192), ancho, ancho);
+    // v0.58: el cofre se apoya en el suelo: sombra ancha de contacto y la base un poco hundida en ella
+    const base = y + 6, sombra = g.createRadialGradient(x, base, 0, x, base, ancho * .5);
+    sombra.addColorStop(0, 'rgba(15,10,6,.6)'); sombra.addColorStop(.6, 'rgba(15,10,6,.28)'); sombra.addColorStop(1, 'rgba(15,10,6,0)');
+    g.save(); g.translate(x, base); g.scale(1, .32); g.translate(-x, -base); g.fillStyle = sombra; g.beginPath(); g.arc(x, base, ancho * .5, 0, 2 * PI); g.fill(); g.restore();
+    // al abrirse da un pequeño salto y se asienta (golpe de la tapa)
+    const salto = c.abierto && c.t < .5 ? Math.sin(c.t / .5 * PI) * ancho * .06 * (1 - c.t / .5) : 0, aplasta = c.abierto && c.t > .45 && c.t < .7 ? 1 + Math.sin((c.t - .45) / .25 * PI) * .06 : 1;
+    if (!c.abierto) { const p = .5 + Math.sin(reloj * 3 + c.tx) * .5; for (let k = 0; k < 3; k++) { const a = reloj * 1.5 + k * 2.1 + c.tx; g.fillStyle = 'rgba(255,230,150,' + (.35 + .35 * p) + ')'; g.beginPath(); g.arc(x + Math.cos(a) * ancho * .32, base - ancho * (.55 + .2 * Math.sin(a * 1.3)), 1.1, 0, 2 * PI); g.fill(); } }   // destellos, sin halo que lo despegue
+    g.save(); g.translate(x, base); g.scale(aplasta, 1 / aplasta); g.drawImage(im, sx, 0, celda, celda, -ancho / 2, -ancho * (182 / 192) + ancho * .04 - salto, ancho, ancho); g.restore();
     if (c.abierto && c.t < 3) { const u = Math.min(1, c.t / dur); g.fillStyle = 'rgba(255,220,120,' + (.5 * u * (1 - Math.max(0, c.t - dur) / 1.6)) + ')'; g.beginPath(); g.moveTo(x - ancho * .2, y - ancho * .35); g.lineTo(x - ancho * .5, y - ancho * 1.4); g.lineTo(x + ancho * .5, y - ancho * 1.4); g.lineTo(x + ancho * .2, y - ancho * .35); g.fill(); }
     if (!c.abierto && cerca && cerca.cofre === c) placaMundo(x, y - ancho * .95, 'COFRE', 'Ábrelo', 60);
   }
@@ -1535,7 +1721,7 @@
       const arma = armas()[M.premio], xp = M.xp || 40, oro = M.monedas || 22;
       lineas = [...M.gracias, '+' + oro + ' monedas · +' + xp + ' XP' + (arma ? ' · ' + arma.nombre : '')];
       fin = () => {
-        const nivelAntes = MUNDO.nivel(prog.xp);
+        const nivelAntes = nivelDe(prog.xp);
         prog.m[n.id] = 'hecha'; contar('misiones'); if(prog.guia===n.id)prog.guia=null; actualizarGuia(); ganarXP(xp); prog.puntos += oro;
         if (arma && !prog.armas.includes(M.premio)) prog.armas.push(M.premio);
         if (arma && !prog.arma) prog.arma = M.premio;
@@ -1544,7 +1730,7 @@
           abrirJade();
         }
         guardarProg(); SON.entregar();
-        if (MUNDO.nivel(prog.xp) > nivelAntes) decir('Nivel ' + MUNDO.nivel(prog.xp) + ' · más aguante', 2.5);
+        if (nivelDe(prog.xp) > nivelAntes) decir('Nivel ' + nivelDe(prog.xp) + ' · más aguante', 2.5);
       };
     } else lineas = st === 'activa' ? M.recuerda : M.luego;
     dlg = { nombre: n.p.nombre, lineas, i: 0, fin, retrato: n.p.sprite ? rutaArte(n.p.sprite) : n.p.retrato, dibujo: n.p.dibujo, sprite: n.p.sprite };
@@ -1565,7 +1751,7 @@
     if (ceremonia) return;
     if (dlg) return avanzarDlg();
     if (fase === 'aldea' && (panelMundo || tienda)) return;
-    if (fase === 'jugando') { usarArma(); etiquetaAccion = ''; return; }
+    if (fase === 'jugando') { if (Date.now() - (+btnAccion.dataset.ya || 0) < 600) return; if (!ejecutar()) usarArma(); etiquetaAccion = ''; return; }
     if (fase === 'aldea' && cerca) {
       if (cerca.tronco) golpearTronco();
       else if (cerca.ruleta) { panelMundo='ruleta'; pintarUI(); aconsejar('ruleta'); }
@@ -1585,11 +1771,24 @@
   }
   // espectro al que puedes cortar por la espalda ahora mismo (o null)
   function objetivoCorte() {
-    const A = armas().asesinato; if (!A) return null; const R2 = (A.radio || 1.7) * T;
+    const A = armas().asesinato; if (!A || !prog.armas.includes('asesinato') || fase !== 'jugando' || cdCorte > 0) return null; const R2 = (A.radio || 1.7) * T;
     let o = null, md = R2; for (const e of espectros) { const d = hypot(e.x - h.x, e.y - h.y); if (!(e.muerto > 0) && d < md) { md = d; o = e; } }
-    return o && abs(difAng(Math.atan2(h.y - o.y, h.x - o.x), o.dir)) >= PI * 0.6 ? o : null;
+    return o && abs(difAng(Math.atan2(h.y - o.y, h.x - o.x), o.dir)) >= PI * (A.angulo ?? 0.5) ? o : null;
   }
   // cambia al siguiente pergamino que tengas (tecla R o el botón ⇄)
+  // v0.58: ejecución por la espalda, estilo Black Ops: botón que solo aparece cuando tienes a uno de espaldas
+  let cdCorte = 0, btnCorte;
+  function ejecutar() {
+    const o = objetivoCorte(); if (!o) return false; const A = armas().asesinato, tx = floor(h.x / T), ty = floor(h.y / T);
+    cdCorte = A.espera || 50; o.muerto = A.duracion; o.estado = 'patrulla'; o.ruta = []; temblor = .35; destello = .5; SON.atrapado();
+    if (torre) torre.lenta = .6;   // cámara lenta en la Torre
+    for (let i = 0; i < 26; i++) manchas.push({ x: o.x + azar(-18, 18), y: o.y + azar(-12, 14), r: azar(1.5, 5.5), v: 16, v0: 16 });
+    for (let i = 0; i < 40; i++) { const a = azar(0, 2 * PI), v = azar(30, 150); gotas.push({ x: o.x, y: o.y - 20, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 50, t: azar(0.3, 0.8) }); }
+    efectos.push({ tipo: 'interroga', x: o.x, y: o.y, t: 1, dur: 1, texto: '✕ ELIMINADO' });
+    const ini = L.espIni[o.n]; o.x = (ini[0] + .5) * T; o.y = (ini[1] + .5) * T; contar('cortes'); ganarXP(25);
+    if (navigator.vibrate) try { navigator.vibrate([20, 30, 60]); } catch (e) { }
+    return true;
+  }
   function siguienteArma() {
     if (prog.armas.length < 2) return; const i = prog.armas.indexOf(prog.arma); prog.arma = prog.armas[(i + 1) % prog.armas.length];
     guardarProg(); etiquetaAccion = ''; decir((armas()[prog.arma] || {}).nombre || prog.arma, 1.6); pitido(700, .05, 'triangle', .4);
@@ -1610,10 +1809,22 @@
       const ini = L.espIni[o.n]; o.x = (ini[0] + .5) * T; o.y = (ini[1] + .5) * T; decir('Un corte limpio. Volverá, y de peor humor', 3); contar('cortes');
     }
     else if (prog.arma === 'pasoHumo') {
-      const dx = abs(Math.cos(h.dir)) > abs(Math.sin(h.dir)) ? Math.sign(Math.cos(h.dir)) : 0, dy = dx ? 0 : Math.sign(Math.sin(h.dir)); let d = Math.round(A.radio || 3);
-      while (d > 0 && solido(tx + dx * d, ty + dy * d)) d--;
-      if (!d) { armaCd = 1; decir('Aquí no hay por dónde colarse', 1.5); return; }
-      efectos.push({ tipo: 'puf', x: h.x, y: h.y, t: .5, dur: .5 }); h.x = (tx + dx * d + .5) * T; h.y = (ty + dy * d + .5) * T; efectos.push({ tipo: 'puf', x: h.x, y: h.y, t: .5, dur: .5 }); h.oculto = Math.max(h.oculto, A.duracion || .6); SON.tp();
+      // v0.58: atraviesa hasta 'muros' bloques de pared seguidos (sin salir del mapa). Lo que llevas en alto se cae al chocar con la pared
+      const maxM = A.muros || 2, cx = Math.cos(h.dir), cy = Math.sin(h.dir), dirs = abs(cx) >= abs(cy) ? [[Math.sign(cx), 0], [0, Math.sign(cy)]] : [[0, Math.sign(cy)], [Math.sign(cx), 0]];
+      let dx = 0, dy = 0, k = 9, muros = 0, lx = 0, ly = 0, dentro = false;
+      for (const [ddx, ddy] of dirs) {   // prueba la dirección principal del movimiento y, si no hay pared, la otra
+        if (!ddx && !ddy) continue; let kk = 1; while (kk <= 4 && !solido(tx + ddx * kk, ty + ddy * kk)) kk++; if (kk > 4) continue;
+        let mm = 0; while (mm < maxM + 1 && solido(tx + ddx * (kk + mm), ty + ddy * (kk + mm))) mm++;
+        const ax = tx + ddx * (kk + mm), ay = ty + ddy * (kk + mm), ok = ax > 0 && ay > 0 && ax < L.cols - 1 && ay < L.rows - 1 && mm <= maxM && !solido(ax, ay);
+        dx = ddx; dy = ddy; k = kk; muros = mm; lx = ax; ly = ay; dentro = ok; if (ok) break;
+      }
+      if (k > 4 || !muros || muros > maxM || !dentro || solido(lx, ly)) { armaCd = 1; decir(muros > maxM ? 'Pared demasiado gruesa' : 'Aquí no hay por dónde colarse', 1.5); return; }
+      const px = tx + dx * (k - 1), py = ty + dy * (k - 1);
+      if (h.carga.length) {   // la reliquia choca con la pared y se queda en el suelo, de tu lado
+        for (const gm of h.carga) { gm.estado = 'suelo'; gm.tx = px; gm.ty = py; }
+        h.carga = []; efectos.push({ tipo: 'polvo', x: (px + .5) * T, y: (py + .5) * T, t: .45, dur: .45, r: .8 * T }); pitido(140, .2, 'square', .6, 70); decir('¡La reliquia rebota en la pared!', 1.8);
+      }
+      efectos.push({ tipo: 'puf', x: h.x, y: h.y, t: .5, dur: .5 }); h.x = (lx + .5) * T; h.y = (ly + .5) * T; efectos.push({ tipo: 'puf', x: h.x, y: h.y, t: .5, dur: .5 }); h.oculto = Math.max(h.oculto, A.duracion || .6); SON.tp();
     }
     else if (prog.arma === 'shuriken') { proyectiles.push({ x: h.x, y: h.y, vx: Math.cos(h.dir) * 230, vy: Math.sin(h.dir) * 230, t: 1.4, r: R2, dur: A.duracion }); pitido(1800, 0.08, 'triangle', .5, 900); }
     else if (prog.arma === 'geta') { temblor = 0.35; efectos.push({ tipo: 'onda', x: h.x, y: h.y, t: .5, dur: .5, r: R2 }); pitido(70, 0.4, 'square', 1.4, 30); ruido(0.3, 150, 2, 1); for (const e of espectros) if (cer(e)) { e.aturdido = A.duracion; e.estado = 'patrulla'; e.ruta = []; } }
@@ -1623,7 +1834,7 @@
     if (btnLanzar) btnLanzar.classList.toggle('on', fase === 'jugando' && !esVillano() && !!h?.carga?.length && !dlg);
     let et = null, apagado = false;
     if (!ceremonia && !dlg && !tienda && !panelMundo && !esVillano()) {
-      if (fase === 'jugando' && armas()[prog.arma]) { const A = armas()[prog.arma]; apagado = armaCd > 0 || (L.exterior && prog.arma === 'shuriken'); et = (A.boton || 'USAR') + (armaCd > 0 ? ' ' + Math.ceil(armaCd) : prog.arma === 'asesinato' && objetivoCorte() ? ' ✓' : ''); }
+      if (fase === 'jugando' && armas()[prog.arma] && prog.arma !== 'asesinato') { const A = armas()[prog.arma]; apagado = armaCd > 0 || (L.exterior && prog.arma === 'shuriken'); et = (A.boton || 'USAR') + (armaCd > 0 ? ' ' + Math.ceil(armaCd) : prog.arma === 'asesinato' && objetivoCorte() ? ' ✓' : ''); }
       if (fase === 'aldea' && cerca) et = cerca.tronco ? (armaDePractica()?'GOLPEAR':'SIN ARMA') : cerca.ruleta ? 'RULETA' : cerca.zumos ? 'ZUMOS' : cerca.cofre ? 'ABRIR' : cerca.npc ? 'HABLAR' : cerca.forja ? 'TEMPLAR' : cerca.paso ? 'VIAJAR' : cerca.sello !== undefined ? 'ENCENDER' : 'ENTRAR';
 
     }
@@ -1636,8 +1847,9 @@
     const im = estampas[p.sprite];
     if (im?.naturalWidth) {
       const alto = p.alto * T, ancho = alto * im.naturalWidth / im.naturalHeight;
-      pisar(x, y + 7 * s, ancho * .95);
-      const resp = 1 + Math.sin(reloj * 1.7 + n.tx) * .012, pie = y + 7 * s + alto * pieDe(im);   // respira: se estira un pelo, los pies no se mueven
+      const hund = alto * ((CONFIG.pantalla || {}).hundir ?? .05);
+      pisar(x, y + 7 * s - hund * .4, ancho * .8);
+      const resp = 1 + Math.sin(reloj * 1.7 + n.tx) * .012, pie = y + 7 * s + alto * pieDe(im) + hund;   // respira: se estira un pelo, los pies no se mueven
       g.save(); g.translate(x, pie); g.scale(1 / Math.sqrt(resp), resp); g.drawImage(escalada(im, ancho, alto), -ancho / 2, -alto, ancho, alto); g.restore();
       if (p.favor && !prog.favores[p.favor]) escribe('◇', x, y - alto, 10, '#ffe7a1', 'center', true);
       if (p.tienda) escribe('◈',x,y-alto-3,10,'#b4ece2','center',true);
@@ -1703,8 +1915,9 @@
     const im = estampas[id];
     if (!im?.naturalWidth) return false;
     const ancho = alto * im.naturalWidth / im.naturalHeight;
-    pisar(x, y, ancho * .75);
-    g.drawImage(escalada(im,ancho,alto),x-ancho/2,y-alto+alto*pieDe(im),ancho,alto);
+    const hund = alto * ((CONFIG.pantalla || {}).hundir ?? .05);   // config.js > pantalla.hundir: cuánto se apoyan en el suelo
+    pisar(x, y - hund * .4, ancho * .75);
+    g.drawImage(escalada(im,ancho,alto),x-ancho/2,y-alto+alto*pieDe(im)+hund,ancho,alto);
     return true;
   }
   function dibujaArbol(x, y) {
@@ -1767,7 +1980,7 @@
   const progNuevo = () => ({ m: {}, items: {}, armas: [], arma: '', puntos: 0, mejoras: {}, aspecto: 'ronin', troncoPDV:TALLER.tronco.pdv, troncoPremio:false, fichas:1, ultimoPremio:null, curiosidades:{}, favores: {}, guia:null, xp: 0, inventario: {}, equipo: {}, materiales: {}, forjas: {}, visitadas: [], tesoros: {}, sellos: {}, temples: {}, cargaJade: 0, versionJade: 1 });
   const niv = k => (prog.mejoras || {})[k] || 0;
   const efectoMejora = k => niv(k) * ((((CONFIG.tienda || {}).mejoras || {})[k] || {}).efecto || 0);
-  const energiaMax = () => (CONFIG.heroe.energiaMax + atributo('aguante') + efectoMejora('aguante') + .2 * Math.min(10, MUNDO.nivel(prog.xp || 0) - 1)) * (1 + ((torre && torre.mods.aguante) || 0));
+  const energiaMax = () => (CONFIG.heroe.energiaMax + atributo('aguante') + efectoMejora('aguante') + .2 * Math.min(10, nivelDe(prog.xp || 0) - 1)) * (1 + ((torre && torre.mods.aguante) || 0));
   function htmlTienda() {
     const Tn = CONFIG.tienda || {}, pr = Tn.precios || [1, 3, 5, 9, 12];
     const fila = (nom, sub, desc, boton, img) => `<div class="rq-item">${img ? `<img class="rq-mini" src="${esc(img)}" alt="">` : ''}<div style="flex:1"><b>${esc(nom)}</b> <small>${esc(sub)}</small><br><span>${esc(desc)}</span></div>${boton}</div>`;
@@ -2401,14 +2614,14 @@
       heroVisible:fase!=='menu'&&!(esVillano()&&!heroVisto()),
       exits:L.exterior?pasosMundo():[],torii:z?.torii,
       treasures:z?.tesoros.filter((p,i)=>!prog.tesoros[zonaId+':'+i]),seals:z?.sellos?.map((p,i)=>[...p,!!prog.sellos[i]]),forge:z?.forja,
-      guide:guiaActual,workshop:TALLER,props:(fase==='aldea'?[...cofres.map(c=>({x:(c.tx+.5)*T,y:(c.ty+.5)*T,f:()=>dibujaCofre(c)})),...(((CONFIG.decoracion||{}).faroles||{})[zonaId]||[]).map(p=>({x:(p[0]+.5)*T,y:(p[1]+.5)*T,f:()=>dibujaFarolDecor(p)}))]:torre?torre.faro.map(f=>({x:(f.tx+.5)*T,y:(f.ty+.5)*T,f:()=>dibujaFarolillo(f)})):[]),goal:torre?progresoTorre().split(' · ')[1]:expedicion?gemasPiso+' / '+(ronda+1)+' gemas':puntos+' puntos',
+      guide:guiaActual,workshop:TALLER,props:(fase==='aldea'?[...cofres.map(c=>({x:(c.tx+.5)*T,y:(c.ty+.5)*T,f:()=>dibujaCofre(c)})),...(((CONFIG.decoracion||{}).faroles||{})[zonaId]||[]).map(p=>({x:(p[0]+.5)*T,y:(p[1]+.5)*T,f:()=>dibujaFarolDecor(p)}))]:torre?[...torre.faro.map(f=>({x:(f.tx+.5)*T,y:(f.ty+.5)*T,f:()=>dibujaFarolillo(f)})),...(pareja&&pareja.otro?[{x:pareja.otro.x,y:pareja.otro.y,esc:.8,f:dibujaCompa}]:[])]:[]),goal:torre?progresoTorre().split(' · ')[1]:expedicion?gemasPiso+' / '+(ronda+1)+' gemas':puntos+' puntos',
       idle:!h.mueve,dialogue:!!dlg,banter:chascarrillos,energy:h.corre||h.energia<energiaMax()*.93?Math.max(.001,h.energia/energiaMax()):0
     },{
       guia:()=>dibujaRutaGuia(0,0,L.cols,L.rows),
       sangre:()=>{for(const m of manchas)elip(m.x,m.y,m.r,m.r*.6,col().sangre)},
       conos:()=>{if(CONFIG.mapa.mostrarConos)for(const e of espectros)if(!(e.muerto>0))dibujaCono(e)},
       hero:()=>tp?dibujaTP():dibujaHeroe(h.x,h.y),enemy:e=>dibujaEspectro(e,e.x,e.y,e.escala),npc:dibujaAldeano,object:dibujaObjeto,objectVisible:objetoVisible,
-      gem:dibujaGema,boost:(x,y)=>{g.save();g.translate(x,y-2+Math.sin(reloj*3));dibujaMochi(0,0,T/24);g.restore()},portal:dibujaPortal,
+      gem:dibujaGema,boost:(x,y)=>{const im=estampas['loto-turbo'];if(im?.naturalWidth){const w=T*1.1,hh=w*im.naturalHeight/im.naturalWidth,fl=Math.sin(reloj*3)*1.5;g.fillStyle='rgba(190,120,255,.25)';g.beginPath();g.ellipse(x,y+4,w*.5,w*.16,0,0,2*PI);g.fill();g.drawImage(escalada(im,w,hh),x-w/2,y-hh+2+fl,w,hh);return;}g.save();g.translate(x,y-2+Math.sin(reloj*3));dibujaMochi(0,0,T/24);g.restore()},portal:dibujaPortal,
       exitName:p=>p[2]==='aldea'?'ALDEA':nombreZona(p[2]).split(' ')[0].toUpperCase(),open:abierto,
       trunk:dibujaTronco,trunkEffects:dibujaGolpesTronco,
       juice:dibujaPuestoZumos,
@@ -2606,8 +2819,8 @@
         const disponible=IW-(tactil?60:14);
         const tam=Math.min(8.3,(disponible-23)/(texto.length*.57));
         const w=Math.min(disponible,Math.max(80,texto.length*tam*.61+23)), x=tactil?5:(IW-w)/2;
-        R(x,AH-22,w,15,'#221b23dc');linea([x+3,AH-22,x+w-3,AH-22],'#aa825b',.5);
-        marcadorGuia(x+8,AH-14.5,3.5);escribe(texto,x+16,AH-12,tam,'#ffe5ae');
+        R(x,AH-30,w,15,'#221b23dc');linea([x+3,AH-30,x+w-3,AH-30],'#aa825b',.5);
+        marcadorGuia(x+8,AH-22.5,3.5);escribe(texto,x+16,AH-20,tam,'#ffe5ae');
       }
       return;
     }
@@ -2624,7 +2837,7 @@
   }
 
   // el mapa: enseña espectros Y la ruta que van a seguir
-  // ---------- v0.38 ZUMOS DE MOMO: minijuego de cortar fruta (lo editable está en zumos.js) ----------
+  // ---------- v0.58 ZUMOS DE MOMO: minijuego de cortar fruta (lo editable está en zumos.js) ----------
   let fru = null;
   const ZU = () => (typeof ZUMOS !== 'undefined' ? ZUMOS : null);
   function empezarFruta() {
@@ -2644,8 +2857,8 @@
   function lanzarFruta() {
     const n = 1 + (Math.random() < .45 ? 1 : 0) + (Math.random() < .2 ? 1 : 0) + (fru.t < 25 && Math.random() < .3 ? 1 : 0);
     for (let k = 0; k < n; k++) {
-      const id = sorteaFruta(), x = IW * (.18 + Math.random() * .64), alt = IH * (.55 + Math.random() * .3), g0 = IH * 1.25;
-      fru.piezas.push({ id, x, y: IH + 24, vx: (IW / 2 - x) * (.25 + Math.random() * .35), vy: -Math.sqrt(2 * g0 * alt), g: g0, rot: Math.random() * 6, vr: (Math.random() - .5) * 5, r: id === 'petardo' ? 12 : ZU().frutas[id].radio });
+      const id = sorteaFruta(), x = IW * (.18 + Math.random() * .64), alt = IH * (.5 + Math.random() * .3), g0 = IH * (ZU().gravedad || 1.05);
+      fru.piezas.push({ id, x, y: IH + 24, vx: (IW / 2 - x) * (.25 + Math.random() * .35), vy: -Math.sqrt(2 * g0 * alt), g: g0, rot: Math.random() * 6, vr: (Math.random() - .5) * 5, r: id === 'petardo' ? 16 : ZU().frutas[id].radio });
     }
     pitido(180 + Math.random() * 60, .12, 'sine', .25, 320);
   }
@@ -2658,7 +2871,7 @@
       ruido(.5, 200, 2.4, .9); pitido(90, .5, 'square', 1, 30); return;
     }
     const f = Z.frutas[p.id], nx = Math.cos(ang + PI / 2), ny = Math.sin(ang + PI / 2);
-    for (const lado of [-1, 1]) fru.mitades.push({ id: p.id, x: p.x + nx * lado * 2, y: p.y + ny * lado * 2, vx: p.vx * .4 + nx * lado * (60 + Math.random() * 40), vy: Math.min(p.vy, 0) * .3 - 30 + ny * lado * 40, g: p.g, rot: ang, vr: lado * (2 + Math.random() * 3), lado, r: p.r, t: 2 });
+    for (const lado of [-1, 1]) fru.mitades.push({ nivel: 1, id: p.id, x: p.x + nx * lado * 2, y: p.y + ny * lado * 2, vx: p.vx * .4 + nx * lado * (60 + Math.random() * 40), vy: Math.min(p.vy, 0) * .3 - 30 + ny * lado * 40, g: p.g, rot: ang, vr: lado * (2 + Math.random() * 3), lado, r: p.r, t: 2 });
     for (let i = 0; i < 16; i++) { const a = ang + (Math.random() - .5) * 1.4 + (i % 2 ? PI : 0), v = 40 + Math.random() * 170; fru.gotas.push({ x: p.x, y: p.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, t: .45 + Math.random() * .5, c: f.jugo, r: .8 + Math.random() * 1.8 }); }
     // mancha en la pared del puesto (se queda toda la partida)
     if (fru.manchas) { const c = fru.manchas.getContext('2d'); c.globalAlpha = .55; c.fillStyle = f.jugo; for (let i = 0; i < 7; i++) { c.beginPath(); c.ellipse(p.x + (Math.random() - .5) * p.r * 3, p.y + (Math.random() - .5) * p.r * 2, 1 + Math.random() * p.r * .5, 1 + Math.random() * p.r * .35, Math.random() * 3, 0, 2 * PI); c.fill(); } c.globalAlpha = 1; }
@@ -2681,6 +2894,7 @@
     const tr = fru.trazo; fru.trazo = null; if (!tr || tr.n < 2) return;
     const C = ZU().combo, n = tr.n; if (n < C.minimo) return;
     const extra = n * C.extra; fru.puntos += extra; fru.mejorCombo = Math.max(fru.mejorCombo, n);
+    const P = ZU().premio; if (n >= (P.comboFicha || 99) && !fru.fichaCombo) { fru.fichaCombo = true; fru.textos.push({ x: tr.x, y: tr.y - 22, txt: '✦ ¡Ficha de la Rueda!', t: 1.8, c: '#9fe0ff', grande: true }); }
     fru.textos.push({ x: tr.x, y: tr.y, txt: 'COMBO x' + n + '  +' + extra, t: 1.5, c: '#ffd86a', grande: true });
     [523, 659, 784, 1047].slice(0, Math.min(4, n)).forEach((q, i) => setTimeout(() => pitido(q, .14, 'triangle', .45), i * 60));
   }
@@ -2691,9 +2905,21 @@
     if (!fru.trazo) fru.trazo = { n: 0, x, y, ult: 0 };
     if (L2 > 30 && Math.random() < .5) ruido(.06, 4200, .25, 1.5);   // silbido de la hoja
     const ang = Math.atan2(dy, dx);
+    // los trozos se pueden volver a cortar (mitad → cuartos → trocitos). Dan muy poco o nada
+    const maxN = ZU().cortesTrozos ?? 3;
+    for (let i = fru.mitades.length - 1; i >= 0; i--) {
+      const m = fru.mitades[i]; if (m.nivel >= maxN || m.tCorte > 0) continue;
+      const t = limita(((m.x - ult.x) * dx + (m.y - ult.y) * dy) / L2, 0, 1), rr = m.r * Math.pow(.72, m.nivel - 1);
+      if (hypot(m.x - (ult.x + dx * t), m.y - (ult.y + dy * t)) > rr + 2) continue;
+      fru.mitades.splice(i, 1); const f = ZU().frutas[m.id], nx = Math.cos(ang + PI / 2), ny = Math.sin(ang + PI / 2);
+      for (const lado of [-1, 1]) fru.mitades.push({ ...m, nivel: m.nivel + 1, lado, tCorte: .12, rot: ang, vx: m.vx * .5 + nx * lado * 70, vy: Math.min(m.vy, 0) * .4 - 40 + ny * lado * 40, vr: lado * (4 + Math.random() * 4) });
+      for (let k = 0; k < 8; k++) { const a = Math.random() * 2 * PI, v = 40 + Math.random() * 120; fru.gotas.push({ x: m.x, y: m.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, t: .4, c: f.jugo, r: .8 + Math.random() }); }
+      const pt = ZU().puntosTrozo || 0; if (pt) { fru.puntos += pt; fru.textos.push({ x: m.x, y: m.y, txt: '+' + pt, t: .5, c: '#fff1d0' }); }
+      ruido(.07, 3200, .8, 1.3); contar('trozos');
+    }
     for (let i = fru.piezas.length - 1; i >= 0; i--) {
       const p = fru.piezas[i], t = limita(((p.x - ult.x) * dx + (p.y - ult.y) * dy) / L2, 0, 1), qx = ult.x + dx * t, qy = ult.y + dy * t;
-      if (hypot(p.x - qx, p.y - qy) < p.r + 2) { fru.piezas.splice(i, 1); cortar(p, ang); if (p.id !== 'petardo') { fru.trazo.n++; fru.trazo.x = p.x; fru.trazo.y = p.y; fru.trazo.ult = 0; } }
+      if (hypot(p.x - qx, p.y - qy) < p.r * (fotoFruta(p.id, 0) ? 1.25 : 1) + 3) { fru.piezas.splice(i, 1); cortar(p, ang); if (p.id !== 'petardo') { fru.trazo.n++; fru.trazo.x = p.x; fru.trazo.y = p.y; fru.trazo.ult = 0; } }
     }
   }
   function actualizarFruta(dt) {
@@ -2702,7 +2928,7 @@
     for (const s2 of fru.salpicas) { s2.t -= dt; s2.gote += dt * 9; } fru.salpicas = fru.salpicas.filter(s2 => s2.t > 0);
     for (const tx of fru.textos) { tx.t -= dt; tx.y -= dt * 14; } fru.textos = fru.textos.filter(tx => tx.t > 0);
     for (const q of fru.gotas) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 380 * dt; q.t -= dt; } fru.gotas = fru.gotas.filter(q => q.t > 0);
-    for (const m of fru.mitades) { m.x += m.vx * dt; m.y += m.vy * dt; m.vy += m.g * dt; m.rot += m.vr * dt; } fru.mitades = fru.mitades.filter(m => m.y < IH + 60);
+    for (const m of fru.mitades) { if (m.tCorte > 0) m.tCorte -= dt; m.x += m.vx * dt; m.y += m.vy * dt; m.vy += m.g * dt; m.rot += m.vr * dt; } fru.mitades = fru.mitades.filter(m => m.y < IH + 60);
     if (fru.sacudida > 0) fru.sacudida -= dt; if (fru.flash > 0) fru.flash -= dt;
     if (fru.trazo) { fru.trazo.ult += dt; if (fru.trazo.ult > .28) cerrarTrazo(); }
     if (fru.fin) return;
@@ -2716,9 +2942,12 @@
   }
   function terminarFruta() {
     if (fru.fin) return; fru.fin = true; fru.t = Math.max(0, fru.t); if (fru.trazo) cerrarTrazo();
-    const P = ZU().premio, monedas = Math.round(fru.puntos * P.monedasPorPunto), ficha = fru.puntos >= P.marcaFicha ? P.fichasSiLlegas : 0;
+    const P = ZU().premio, monedas = Math.round(fru.puntos * P.monedasPorPunto), ficha = (fru.puntos >= P.marcaFicha || fru.fichaCombo) ? P.fichasSiLlegas : 0;
+    const G = ZU().granPremio; let gordo = 0; if (G && fru.puntos >= G.puntos && !(G.unaVez && prog.granPremioZumos)) { gordo = G.monedas; prog.puntos += gordo; prog.granPremioZumos = true; destello = 1; temblor = .5; [523,659,784,1047,1319,1568,2093].forEach((q, i) => setTimeout(() => pitido(q, .3, 'triangle', .6), i * 110)); }
     prog.puntos += monedas; prog.fichas += ficha; prog.recordZumos = Math.max(prog.recordZumos || 0, fru.puntos); guardarProg();
-    fru.premio = { monedas, ficha };
+    const zumo = [...(ZU().zumos || [])].reverse().find(z => fru.puntos >= z.desde);
+    if (zumo) { prog.zumos = prog.zumos || {}; prog.zumos[zumo.id] = Math.min(zumo.max || 3, (prog.zumos[zumo.id] || 0) + 1); }
+    fru.premio = { monedas, ficha, zumo, gordo };
     [659, 523, 392].forEach((q, i) => setTimeout(() => pitido(q, .2, 'triangle', .5), i * 140));
     setTimeout(() => { if (fase === 'fruta') pintarUI(); }, 700);
   }
@@ -2728,7 +2957,9 @@
     return `<div class="rq-hanko">果</div><h2>${esc(Z.nombre)}</h2><div class="rq-num">${fru.puntos} pts</div>
       ${fru.ptsArma ? `<p>⚔ Tu arma (ataque ${fru.ataque}) sumó <b>${fru.ptsArma} pts</b></p>` : `<p><small>Con un arma equipada cortas mejor: cada punto de ataque suma puntos por fruta. Mejórala en la fragua.</small></p>`}
       <p>${fru.cortadas} frutas cortadas${fru.squirts ? ' · ' + fru.squirts + ' squirt' + (fru.squirts > 1 ? 's' : '') : ''}${fru.mejorCombo >= Z.combo.minimo ? ' · mejor combo x' + fru.mejorCombo : ''} · récord ${prog.recordZumos}</p>
-      <p>+${pr.monedas} monedas${pr.ficha ? ` · <span class="rq-pildora">✦ +${pr.ficha} ficha de la Rueda</span>` : ` · <small>ficha a partir de ${Z.premio.marcaFicha} pts</small>`}</p>
+      ${pr.zumo ? `<p class="rq-pildora">🧃 ${esc(pr.zumo.nombre)} · ${esc(pr.zumo.desc)}</p>` : `<p><small>Con ${(Z.zumos || [])[0]?.desde || 40} pts Momo te da un zumo para la Torre.</small></p>`}
+      ${pr.gordo ? `<h2 style="color:#c8901a">¡GRAN PREMIO! ◈ +${pr.gordo.toLocaleString('es')}</h2>` : Z.granPremio && !(Z.granPremio.unaVez && prog.granPremioZumos) ? `<p><small>Gran premio: ◈ ${Z.granPremio.monedas.toLocaleString('es')} si haces ${Z.granPremio.puntos} pts en una partida</small></p>` : ''}
+      <p>+${pr.monedas} monedas${pr.ficha ? ` · <span class="rq-pildora">✦ +${pr.ficha} ficha de la Rueda</span>` : ` · <small>ficha con ${Z.premio.marcaFicha} pts o un combo de ${Z.premio.comboFicha || 4}</small>`}</p>
       <button class="rq-b" data-a="otraFruta"${prog.puntos < (Z.precioEntrada || 0) ? ' disabled' : ''}>Otra ronda · ${Z.precioEntrada || 0} monedas</button><button class="rq-b sec" data-a="salirFruta">Volver a la aldea</button>`;
   }
   // --- dibujo ---
@@ -2761,7 +2992,17 @@
     if (!fru.manchas || fru.manchas.width !== Math.ceil(IW)) { fru.manchas = document.createElement('canvas'); fru.manchas.width = Math.ceil(IW); fru.manchas.height = Math.ceil(IH); }
     return cv;
   }
+  // imágenes de fruta opcionales: assets/frutas/<id>.webp (entera), <id>-mitad.webp, <id>-cuarto.webp. Si faltan se dibujan en código
+  const imgFruta = {};
+  function fotoFruta(id, nivel) {
+    let k = 'assets/frutas/' + id + (nivel >= 3 ? '-trozo' : nivel >= 2 ? '-cuarto' : nivel ? '-mitad' : '') + '.webp';
+    if (nivel >= 3 && !(typeof arteIntegrado !== 'undefined' && arteIntegrado[k])) k = 'assets/frutas/' + id + '-cuarto.webp';   // sin trocito: usa el gajo
+    const src = typeof arteIntegrado !== 'undefined' && arteIntegrado[k];
+    if (!src) return null; let im = imgFruta[k]; if (!im) { im = imgFruta[k] = new Image(); im.src = src; } return im.naturalWidth ? im : null;
+  }
   function pintaFruta(c, id, r, mitad) {   // origen en el centro
+    const foto = id === 'petardo' ? fotoFruta('pocima', 0) : fotoFruta(id, mitad || 0);   // el petardo es ahora la pócima maldita
+    if (foto) { const k = r * (ZU().tamanoImagen || 2.7) / Math.max(foto.naturalWidth, foto.naturalHeight); c.drawImage(foto, -foto.naturalWidth * k / 2, -foto.naturalHeight * k / 2, foto.naturalWidth * k, foto.naturalHeight * k); return; }
     if (id === 'petardo') {
       c.fillStyle = '#b3202c'; c.beginPath(); c.arc(0, 0, r, 0, 2 * PI); c.fill(); c.fillStyle = '#e8c15a'; c.fillRect(-r, -2, r * 2, 4);
       c.fillStyle = '#f2e6cc'; c.font = '700 ' + r + 'px serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('爆', 0, 1);
@@ -2801,7 +3042,7 @@
     const sh = fru.sacudida > 0 ? fru.sacudida * 8 : 0;
     g.save(); if (sh) g.translate((Math.random() - .5) * sh, (Math.random() - .5) * sh);
     g.drawImage(fondoFruta(), 0, 0, IW, IH); g.drawImage(fru.manchas, 0, 0, IW, IH);
-    for (const m of fru.mitades) { g.save(); g.translate(m.x, m.y); g.rotate(m.rot + (m.lado < 0 ? PI : 0)); pintaFruta(g, m.id, m.r, true); g.restore(); }
+    for (const m of fru.mitades) { g.save(); g.translate(m.x, m.y); g.rotate(m.rot + (m.lado < 0 ? PI : 0)); pintaFruta(g, m.id, m.r * Math.pow(.72, m.nivel - 1), m.nivel); g.restore(); }
     for (const p of fru.piezas) { elip(p.x + 4, p.y + p.r + 2, p.r * .7, p.r * .2, 'rgba(0,0,0,.25)'); g.save(); g.translate(p.x, p.y); g.rotate(p.rot * .3); pintaFruta(g, p.id, p.r, false); g.restore(); }
     for (const q of fru.gotas) { g.globalAlpha = Math.min(1, q.t * 2); circ(q.x, q.y, q.r, q.c); } g.globalAlpha = 1;
     // estela de la katana: un trazo blanco que se afina
@@ -2818,16 +3059,23 @@
     }
     g.globalAlpha = 1;
     if (fru.flash > 0) { g.fillStyle = 'rgba(255,220,150,' + Math.min(.6, fru.flash) + ')'; g.fillRect(0, 0, IW, IH); }
-    for (const tx of fru.textos) { g.globalAlpha = Math.min(1, tx.t * 1.6); escribe(tx.txt, tx.x, tx.y, tx.grande ? 14 : 10, tx.c, 'center', true); } g.globalAlpha = 1;
+    for (const tx of fru.textos) { g.globalAlpha = Math.min(1, tx.t * 1.6); g.font = 'italic 700 ' + (tx.grande ? 15 : 11) + 'px Georgia,serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(40,20,8,.75)'; g.strokeText(tx.txt, tx.x, tx.y); g.fillStyle = tx.c; g.fillText(tx.txt, tx.x, tx.y); } g.globalAlpha = 1;
     // marcador: tiempo, puntos y vidas como cuencos
     const Z = ZU();
-    escribe(Math.ceil(fru.t) + ' s', 14, IH * .27, 12, fru.t <= 10 ? '#ff7a5a' : '#f2e6cc', 'left', true);
-    escribe(fru.puntos + ' pts', IW / 2, IH * .27, 13, '#ffd86a', 'center', true);
-    for (let k = 0; k < Z.fallosMax; k++) escribe(k < fru.fallos ? '✗' : '◯', IW - 14 - k * 14, IH * .27, 11, k < fru.fallos ? '#ff6a5a' : '#f2e6cc', 'center', true);
+    // v0.58: marcador arriba, en tablillas de madera con números serif grandes
+    const tabla = (x, w, h) => { g.fillStyle = 'rgba(30,18,10,.78)'; g.beginPath(); g.roundRect(x, 5, w, h, 6); g.fill(); g.strokeStyle = 'rgba(214,170,100,.75)'; g.lineWidth = 1; g.stroke(); };
+    const num = (txt, x, y, tam, col, al) => { g.font = '700 ' + tam + 'px Georgia,"Hiragino Mincho ProN",serif'; g.textAlign = al; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.55)'; g.strokeText(txt, x, y); g.fillStyle = col; g.fillText(txt, x, y); };
+    const urgente = fru.t <= 10, lat = urgente ? 1 + Math.abs(Math.sin(reloj * 6)) * .12 : 1;
+    tabla(6, 58, 26); num('時', 18, 18, 11, '#d6aa64', 'center'); num(String(Math.ceil(fru.t)), 46, 18.5, 15 * lat, urgente ? '#ff8a6a' : '#fbefd6', 'center');
+    if (fru.pulso == null || fru.ultPts !== fru.puntos) { fru.pulso = fru.ultPts == null ? 0 : .25; fru.ultPts = fru.puntos; }
+    fru.pulso = Math.max(0, fru.pulso - 1 / 60); const ps = 1 + fru.pulso * 1.2;
+    tabla(IW / 2 - 46, 92, 30); num(fru.puntos.toLocaleString('es'), IW / 2, 20.5, 19 * ps, '#ffd86a', 'center');
+    const vx = IW - 8 - Z.fallosMax * 15; tabla(vx - 4, Z.fallosMax * 15 + 6, 26);
+    for (let k = 0; k < Z.fallosMax; k++) num(k < fru.fallos ? '✕' : '●', vx + 7 + k * 15, 18.5, 11, k < fru.fallos ? '#ff6a5a' : '#ffb36b', 'center');
     if (fru.t > Z.duracion - 3 && !fru.fin) { g.globalAlpha = Math.min(1, (fru.t - Z.duracion + 3)); escribe('Pasa el dedo por la fruta', IW / 2, IH * .55, 11, '#f2e6cc', 'center', true); g.globalAlpha = 1; }
   }
 
-  // ---------- v0.38 OPCIONES (se guardan en este navegador) ----------
+  // ---------- v0.58 OPCIONES (se guardan en este navegador) ----------
   let opciones = false, borrarArmado = 0;
   const OPC = () => CONFIG.opciones || {};
   function leerOpciones() {
@@ -2861,6 +3109,7 @@
       <h3>Lectura</h3>
       ${fila('Diálogos', 'Velocidad del texto', elegir('texto', vel, [['lento', 'Lento'], ['normal', 'Normal'], ['rapido', 'Rápido']]))}
       <h3>Partida</h3>
+      ${fila('Copia de la partida', 'Guárdala o pásala a otro móvil', `<button class="rq-c" data-a="exportar">Copiar</button> <button class="rq-c" data-a="importar">Cargar</button>`)}
       ${fila('Borrar progreso', 'Misiones, monedas y equipo', `<button class="rq-c rq-peligro" data-a="borrarTodo">${Date.now() - borrarArmado < 3000 ? '¿Seguro?' : 'Borrar'}</button>`)}
       <button class="rq-b" data-a="cerrarOpciones">Volver al camino</button>`;
   }
@@ -2876,7 +3125,7 @@
     pitido(700, .04, 'triangle', .3); pintarUI(); return true;
   }
 
-  // ---------- v0.38 MAPA A LÁPIZ SOBRE PERGAMINO ----------
+  // ---------- v0.58 MAPA A LÁPIZ SOBRE PERGAMINO ----------
   // El papel y el terreno (grafito, aguadas de tinta, sendas punteadas) se dibujan UNA vez por mapa y
   // tamaño en un lienzo aparte; cada fotograma solo se copian y encima van los marcadores que se mueven.
   const pergaminos = new Map();
@@ -3208,9 +3457,9 @@
   }
 
   let mapaExplorador=false,btnPlano;
-  // v0.38: al cambiar de zona se tapa la pantalla con una cortina con el nombre del lugar mientras se
+  // v0.58: al cambiar de zona se tapa la pantalla con una cortina con el nombre del lugar mientras se
   // prepara el suelo nuevo (antes se veía congelado o negro). Dura lo que tarde en prepararse.
-  // v0.38: mientras se prepara la zona, un velo oscuro breve; después, el nombre del lugar en blanco
+  // v0.58: mientras se prepara la zona, un velo oscuro breve; después, el nombre del lugar en blanco
   // hueso, sin fondo, en el centro, que se queda un momento y se desvanece despacio.
   function dibujaCortina(velo) {
     if (velo > 0) { g.save(); g.globalAlpha = velo; R(0, 0, IW, IH, '#0d0a0c'); g.restore(); }
@@ -3238,7 +3487,7 @@
     if (ceremonia) { dibujaCeremoniaJade(); return; }
     R(0, 0, IW, IH, col().fondo);
     if (esVillano()) { dibujaVistaVillano(); return; }
-    dibujaMundo(); dibujaHUD();
+    dibujaMundo(); dibujaHUD(); dibujaBolsa(); dibujaXP();
     if (cortina) { const A = (CONFIG.ambiente || {}).nombreZona || {}; if (cortina.t > .15 + (A.quieto ?? 1.1) + (A.fundido ?? 1.6)) cortina = null; else dibujaCortina(Math.max(0, 1 - cortina.t / .4)); }
     if(!mapaExplorador) mapaGeo=null;
     if(mapaExplorador&&(fase==='aldea'||fase==='jugando')) {
@@ -3255,9 +3504,14 @@
   perfPanel.style.cssText = 'position:fixed;top:5px;left:5px;z-index:99999;pointer-events:none;background:#000c;color:#bfffd1;font:11px monospace;padding:5px;white-space:pre;display:none';
   document.body.appendChild(perfPanel);
   window.addEventListener('keydown', e => { if (e.code === 'F3') { e.preventDefault(); perfPanel.style.display = perfPanel.style.display === 'none' ? 'block' : 'none'; } });
+  let fallosSeguidos = 0;
   function cuadro(ms) {
     requestAnimationFrame(cuadro);   // v0.20: primero se pide el siguiente fotograma; si algo falla, el juego sigue vivo
-    try { pasoCuadro(ms); } catch (e) { console.error(e); }
+    try { pasoCuadro(ms); fallosSeguidos = 0; } catch (e) {
+      console.error(e);
+      // v0.58: si algo falla muchas veces seguidas, se vuelve a un sitio seguro en vez de quedarse colgado
+      if (++fallosSeguidos === 45) { try { guardarProg(); torre = null; fru = null; consejo = null; cofreAbierto = null; panelEco = null; dlg = null; irAldea('aldea'); decir('Algo se torció. Te traemos a la aldea; tu progreso está a salvo.', 4); } catch (e2) { } }
+    }
   }
   function pasoCuadro(ms) {
     const dt = Math.min(0.05, (ms - anterior) / 1000 || 0); anterior = ms;
@@ -3285,7 +3539,7 @@
     if (ms - perfInicio >= 4000) {
       const segundos = (ms - perfInicio) / 1000;
       perfFPS = Math.round(perfFrames / segundos);
-      // v0.38: la calidad automática solo BAJA (nunca sube y baja en bucle), mira la mediana de los
+      // v0.58: la calidad automática solo BAJA (nunca sube y baja en bucle), mira la mediana de los
       // fotogramas (un parón suelto al cambiar de zona no cuenta) y pide dos tandas lentas seguidas.
       perfCuadros.sort((a, b) => a - b);
       const carga = perfCuadros.length ? perfCuadros[perfCuadros.length >> 1] : 0; perfCuadros = [];
@@ -3293,7 +3547,7 @@
       if (R.calidadAutomatica !== false && ms > ignorarHasta && carga > (R.umbralMs || 14) && calidadDinamica > minimo) {
         if (++tandasLentas >= 2) { calidadDinamica = Math.max(minimo, calidadDinamica - .25); tandasLentas = 0; medir(); }
       } else tandasLentas = 0;
-      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.38 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
+      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.58 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
       perfInicio = ms; perfFrames = 0; perfLentos = 0; perfUpdate = perfRender = perfAudio = perfMuestras = 0;
     }
   }
@@ -3314,7 +3568,7 @@
     const nuevoW = Math.round(w * dpr), nuevoH = Math.round(hh * dpr);
     // Las texturas dependen de la escala; no invalidarlas si la pantalla no cambió.
     if (lienzo.width !== nuevoW || lienzo.height !== nuevoH) {
-      // v0.38: al cambiar de tamaño solo se tiran las cachés baratas; el suelo ya proyectado se reaprovecha
+      // v0.58: al cambiar de tamaño solo se tiran las cachés baratas; el suelo ya proyectado se reaprovecha
       teselas = {}; escaladas.clear(); ARTE_ISO.escala();
       lienzo.width = nuevoW; lienzo.height = nuevoH;
       redibujar = true;
@@ -3322,7 +3576,7 @@
     K = lienzo.width / IW;
     // redibuja en el acto: un lienzo recién redimensionado está vacío y se vería negro un instante
     if (redibujar && L && h && fase !== 'menu') { redibujar = false; try { dibujar(); } catch (e) { console.error(e); } }
-    if (vertical) { mandos.style.top = (15 * esc) + 'px'; mandos.style.left = '8px'; mandos.style.right = '8px'; }
+    if (vertical) { mandos.style.top = (15 * esc + 40) + 'px'; mandos.style.left = '8px'; mandos.style.right = '8px'; }
     else { mandos.style.top = (arr + 15 * esc) + 'px'; mandos.style.left = (izq + 4) + 'px'; mandos.style.right = 'auto'; }
   }
 
@@ -3358,6 +3612,10 @@
   .rq.tactil .rq-sprint{display:block}
   .rq-lanzar{position:absolute;right:104px;bottom:22px;width:64px;height:64px;border-radius:50%;border:2px solid #d5a875;background:#3a2a1cd9;color:#ffebc2;font:700 10px ui-monospace,monospace;z-index:2;display:none;box-shadow:0 4px 14px #0006}
   .rq-lanzar.on{display:block}
+  .rq-corte{position:absolute;left:50%;bottom:11%;transform:translateX(-50%);display:none;align-items:center;gap:8px;padding:8px 16px 8px 8px;border-radius:999px;border:2px solid #ff3b30;background:rgba(10,6,6,.82);color:#fff;font:700 13px Georgia,serif;letter-spacing:3px;z-index:3;box-shadow:0 0 0 3px #ff3b3044,0 0 22px #ff3b3088;animation:rqCorte .8s ease-in-out infinite}
+  .rq-corte.on{display:flex}.rq-corte b{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#ff3b30;color:#fff;font-size:17px}
+  .rq:not(.tactil) .rq-corte span::after{content:'  [E]';opacity:.6;letter-spacing:1px}
+  @keyframes rqCorte{50%{box-shadow:0 0 0 7px #ff3b3022,0 0 30px #ff3b30aa}}
   .rq-cambiar{position:absolute;right:100px;bottom:120px;width:42px;height:42px;border-radius:50%;border:1px solid #c08a4e;background:#3a2a1cd9;color:#ffebc2;font:700 18px Georgia,serif;z-index:2;display:none}.rq-cambiar.on{display:block}.rq:not(.tactil) .rq-cambiar{right:100px;bottom:22px}.rq:not(.tactil) .rq-lanzar{right:16px;bottom:112px}
   .rq-accion{position:absolute;right:16px;bottom:112px;width:78px;height:78px;border-radius:50%;border:3px solid rgba(255,224,138,.8);background:rgba(142,15,28,.55);color:#fff;font:700 11px ui-monospace,monospace;z-index:2;display:none;cursor:pointer}
   .rq:not(.tactil) .rq-accion{bottom:22px}
@@ -3494,6 +3752,7 @@
   .rq-rueda{position:absolute;inset:0;border-radius:50%;border:5px double #e4b777;background:conic-gradient(var(--sectores));box-shadow:0 10px 24px #08050a88,inset 0 0 0 2px #593a31,inset 0 0 20px #170c163d;transform:rotate(var(--rot));box-sizing:border-box}
   .rq-rueda::before{content:"";position:absolute;inset:9px;border:1px dashed #f3d0a377;border-radius:50%}
   .rq-rueda i{position:absolute;left:calc(50% - 10px);top:calc(50% - 10px);width:20px;height:20px;font:normal 16px Georgia;color:#ffedc6;text-shadow:0 1px 3px #15101a;transform:rotate(var(--a)) translateY(clamp(-81px,-23vw,-47px)) rotate(calc(-1 * var(--a)))}
+  .rq-rueda i.rq-cuna{font:900 15px Georgia,serif;color:#9dff8a;text-shadow:0 0 4px #0a3a10,0 0 2px #000}
   .rq-rueda b{position:absolute;inset:41%;display:grid;place-items:center;border-radius:50%;background:#f0c281;color:#523033;border:2px solid #67443e}
   .rq-puntero{position:absolute;z-index:1;left:calc(50% - 8px);top:-7px;width:16px;height:23px;background:#ffe0a1;clip-path:polygon(0 0,100% 0,50% 100%);filter:drop-shadow(0 2px 3px #3b2222)}
   .rq-rueda.rodando{animation:ruedaCedro 2.4s cubic-bezier(.12,.74,.2,1) both}
@@ -3501,7 +3760,7 @@
   .rq-prob{margin:12px 0;color:#e6cc9c;font-size:12px;text-align:left}
   @media(max-width:520px){.rq-dlg.grande .rq-marco{width:84px;height:113px}.rq-dlg.grande p{font-size:13px}.rq-panel h2{font-size:22px}}
   @media(prefers-reduced-motion:reduce){.rq-rueda.rodando{animation:none}}
-  /* v0.38 — un solo estilo: laca oscura, oro y sello rojo; misma letra en todo */
+  /* v0.58 — un solo estilo: laca oscura, oro y sello rojo; misma letra en todo */
   .rq, .rq button, .rq input, .rq select{font-family:Georgia,"Hiragino Mincho ProN","Yu Mincho",serif}
   .rq-m,.rq-mandos .ancho,.rq-c,.rq-sprint,.rq-accion,.rq-lanzar{font-family:Georgia,serif!important;letter-spacing:.5px}
   .rq-mandos .ancho{font-size:12px;font-weight:700;color:#f1dfba}
@@ -3515,7 +3774,7 @@
   .rq-ficha{background:#2a2023!important;border:1px solid #8a6a44!important;border-radius:9px!important;box-shadow:none!important}
   .rq-ficha>div{flex:1;min-width:0}.rq-ficha b{color:#ffe6b3;font-size:17px}.rq-ficha p{margin:2px 0!important;font-size:12px!important;color:#d9c4a6!important}
 
-  /* v0.38 — PERGAMINO JAPONÉS para todos los menús: papel washi, marco de madera, tinta y sello rojo (con lo bueno de Dofus: medallones, rejilla de objetos, rarezas de color) */
+  /* v0.58 — PERGAMINO JAPONÉS para todos los menús: papel washi, marco de madera, tinta y sello rojo (con lo bueno de Dofus: medallones, rejilla de objetos, rarezas de color) */
   .rq-panel.rq-washi{max-width:440px;text-align:center;background:
      radial-gradient(ellipse at 20% 10%,#fbf3dc 0%,transparent 55%),radial-gradient(ellipse at 85% 90%,#d9bf8c55 0%,transparent 60%),
      repeating-linear-gradient(97deg,#0000 0 3px,#a0804a0d 3px 4px),linear-gradient(170deg,#f2e4c3,#e3cc9c)!important;
@@ -3541,6 +3800,8 @@
   .rq-cartas{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0}.rq-carta{display:flex;flex-direction:column;gap:4px;padding:10px 6px;border:2px solid #7a5a36;border-radius:8px;background:linear-gradient(#fff6de,#e7d1a0);color:#2b1d12;font-family:Georgia,serif;cursor:pointer;box-shadow:0 3px 0 #5a3a1a66;transition:transform .15s}.rq-carta:hover,.rq-carta:active{transform:translateY(-3px);border-color:#a3241d}.rq-carta b{font-size:13px;color:#8c1d1d}.rq-carta small{font-size:11px;line-height:1.25}
   .rq-botin{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;margin:8px 0;padding:8px;border:1px dashed #8a6a44;border-radius:6px;background:#fbf2dc88}.rq-botin b{width:100%;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8c1d1d}.rq-botin span{padding:3px 8px;border-radius:999px;background:#2b1d12;color:#f6e3b8;font-size:13px}
   .rq-pop{display:flex;justify-content:space-between;opacity:0;animation:rqPop .45s ease-out forwards}@keyframes rqPop{0%{opacity:0;transform:scale(.7) translateY(8px)}70%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:none}}
+  .rq-premioRueda{display:flex;gap:10px;align-items:flex-start;text-align:left;margin:8px 0;padding:10px;border:1px solid #a88a5c;border-radius:8px;background:#fbf2dc}.rq-premioRueda>i{font-style:normal;font-size:26px;min-width:40px;text-align:center}.rq-premioRueda .rq-item-icon{width:40px;height:40px}.rq-premioRueda b{display:block;color:#8c1d1d;font-size:15px}.rq-premioRueda small{display:block;color:#6b4c2c}.rq-premioRueda p{margin:4px 0 0!important;font-style:italic;font-size:12.5px!important}
+  .rq-amigo{display:flex;align-items:center;gap:9px;text-align:left;padding:7px 9px;margin:5px 0;border:1px solid #a88a5c;border-radius:6px;background:#fbf2dc}.rq-amigo>i{width:10px;height:10px;border-radius:50%;background:#9a8a70;flex:none}.rq-amigo>i.on{background:#3fbf4a;box-shadow:0 0 6px #3fbf4a}.rq-amigo>div{flex:1;min-width:0}.rq-amigo b{display:block;font-size:14px}.rq-amigo small{font-size:11px;color:#6b4c2c}.rq-amigo.off{opacity:.55}.rq-amigo em{font-size:11px;color:#8c1d1d}
   .rq-dias{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:10px 0}.rq-dia{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border:1px solid #a88a5c;border-radius:6px;background:#fbf2dc}.rq-dia b{font-size:18px;color:#8c1d1d}.rq-dia small{font-size:9px}.rq-dia.hecho{opacity:.45}.rq-dia.hoy{border:2px solid #a3241d;box-shadow:0 0 10px #a3241d55;background:#fff6dc}
   .rq-logro{display:flex;align-items:center;gap:8px;text-align:left;padding:7px 9px;margin:5px 0;border:1px solid #a88a5c;border-radius:6px;background:#fbf2dc99}.rq-logro>div{flex:1;min-width:0}.rq-logro b{display:block;font-size:13px}.rq-logro small{display:block;font-size:11px;color:#5a3e22}.rq-logro progress{width:100%;height:5px}.rq-logro.listo{border-color:#a3241d;background:#fff3d8}.rq-logro.cobrado{opacity:.55}.rq-logro em{color:#3f7a33;font-style:normal;font-weight:700}
   .rq-rareza{font:700 13px Georgia,serif;letter-spacing:3px;text-transform:uppercase;margin:0 0 6px!important;text-align:center}
@@ -3602,7 +3863,7 @@
       const juramento=EQUIPO.juramentos[mejora?.juramento];
       return '<button class="rq-objeto '+String(o.rareza||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')+'" title="'+esc(o.nombre+' · '+o.rareza+' · '+textoStats(o.atributos)+' — '+o.descripcion)+'" data-a="vestir" data-id="'+id+'" '+(puesto?'disabled':'')+'><i>'+iconoObjeto(id,o.icono)+'</i><span><b>'+esc(o.nombre)+(mejora?' +'+mejora.grado:'')+'</b><small>'+o.rareza+(puesto?' · Equipado':'')+'</small><small>'+esc(textoStats(o.atributos))+(juramento?' · '+juramento.nombre:'')+'</small><small>'+esc(o.descripcion)+'</small></span></button>';
     }).join('');
-    const nivel=MUNDO.nivel(prog.xp), siguiente=55*nivel*nivel;
+    const nivel=nivelDe(prog.xp), siguiente=55*nivel*nivel;
     const ficha=[
       ['Ataque',atributo('ataque'),'Potencia del arma en el cedro de entrenamiento'],
       ['Golpe al cedro',armaDePractica()?TALLER.dano(atributo('ataque'),false)+' / '+TALLER.dano(atributo('ataque'),true):'Equipa un arma','Daño normal / crítico'],
@@ -3619,7 +3880,7 @@
     const materiales=Object.entries(EQUIPO.materiales).map(([k,n])=>'<div class="rq-recurso">'+iconoObjeto(k)+'<b>'+n+'</b><small>× '+(prog.materiales[k]||0)+'</small></div>').join('');
     const nObj=(lista.match(/rq-objeto/g)||[]).length, relleno='<div class="rq-hueco"></div>'.repeat(Math.max(0,10-nObj));
     const equipo='<div class="rq-equipo">'+huecos+'</div><h3>'+EQUIPO.ranuras[ranura]+'</h3>'+
-      '<div class="rq-rejilla">'+lista+relleno+'</div>'+(lista?'':'<p class="rq-detalle">Aún no tienes nada para este hueco. El equipo sale de las plantas del Dojo y de la Rueda del Cedro.</p>')+
+      '<div class="rq-rejilla">'+lista+relleno+'</div>'+'<div class="rq-detalle"><b>Para este hueco</b>'+(Object.entries(EQUIPO.objetos).filter(([id,o])=>EQUIPO.encaja(o,ranura)&&!equipoPoseido(id)).map(([id,o])=>'<br>'+esc(o.icono||'◇')+' '+esc(o.nombre)+' <small>('+o.rareza+') · '+({'Común':'Rueda del Cedro y cofres','Raro':'pisos de la Torre, cofres raros y mercado','Épico':'jefes, cofres épicos y mercado de rango Rōnin','Legendario':'terminar la Torre o un cofre fenomenal'}[o.rareza]||'Torre y cofres')+'</small>').join('')||'<br>Ya tienes todo lo de este hueco.')+'</div>'+
       (prog.equipo[ranura]?'<button class="rq-b sec" data-a="vestir" data-id="quitar">Desequipar</button>':'');
     const curio='<h3>Curiosidades</h3>'+(prog.curiosidades.huevo?'<div class="rq-recurso curio">'+iconoObjeto('huevo')+'<b>Huevo de gato disecado</b><small>× '+prog.curiosidades.huevo+'</small><p>Ni huevo, ni gato. El vendedor insiste en que es de temporada.</p></div>':'<p>Tu colección empieza en la Rueda del Cedro.</p>');
     const contenido=paginaBolsa==='equipo'?equipo:paginaBolsa==='atributos'?bolsa+'<ul class="rq-stats">'+ficha+'</ul>':'<h3>Minerales y componentes</h3><div class="rq-recursos">'+materiales+'</div>'+curio;
@@ -3643,7 +3904,7 @@
     const actual=prog.forjas[id] || {grado:0};
     const proximo=EQUIPO.grados[actual.grado];
     const disponible=!!proximo && prog.puntos>=proximo.monedas &&
-      (prog.materiales[proximo.material]||0)>0 && MUNDO.nivel(prog.xp)>=proximo.nivel;
+      (prog.materiales[proximo.material]||0)>0 && nivelDe(prog.xp)>=proximo.nivel;
     return {arma,actual,proximo,disponible};
   }
   function iniciarRitual(id, juramento) {
@@ -3690,7 +3951,10 @@
     cont.classList.toggle('villano', esVillano()); cont.classList.toggle('fruta', fase === 'fruta');
     if (btnCamara) btnCamara.hidden=!esVillano();
     if (lienzo && layoutVillano!==esVillano()) medir();
-    if (consejo) html = htmlConsejo();
+    if (avisoRed && fase !== 'jugando') html = htmlAvisoRed();
+    else if (panelAmigos) html = htmlAmigos();
+    else if (subidaNivel && fase !== 'jugando' && fase !== 'fruta') html = htmlSubida();
+    else if (consejo) html = htmlConsejo();
     else if (panelEco === 'diaria') html = htmlDiaria();
     else if (panelEco === 'logros') html = htmlLogros();
     else if (cofreAbierto && cofreAbierto.mostrar <= 0) html = htmlCofre();
@@ -3736,7 +4000,7 @@
     if(btnPlano)btnPlano.hidden=esVillano()||!['aldea','jugando'].includes(fase);
     if (btnDojo) btnDojo.style.display = fase === 'aldea' ? '' : 'none';
     ui.hidden = !html; ui.innerHTML = html ? `<div class="rq-panel rq-washi ${panelMundo==='equipo'&&!consejo&&!opciones?'rq-panel-bolsa':''}">${html}</div>` : '';
-    {   // v0.38: una X arriba a la derecha que pulsa el botón de cerrar/volver del panel
+    {   // v0.58: una X arriba a la derecha que pulsa el botón de cerrar/volver del panel
       const pn = ui.querySelector('.rq-panel'), salir = pn && [...pn.querySelectorAll('button[data-a]')].reverse().find(b => /^(Cerrar|Volver|Seguir|Continuar|Salir)/i.test(b.textContent.trim()));
       if (salir) { const x = document.createElement('button'); x.className = 'rq-x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Cerrar'); x.addEventListener('click', ev => { ev.stopPropagation(); salir.click(); }); pn.prepend(x); }
     }
@@ -3781,7 +4045,7 @@
       '<button class="rq-c" data-a="alternarGuia">'+(prog.guia===false?'Activar guía':'Ocultar guía')+'</button></div>';
     const rutas = pasosMundo().map(p => '<li>' + esc(nombreZona(p[2])) + (abierto(p) ? ' · ' + (p[1] < L.rows/3 ? 'norte' : p[1] > L.rows*2/3 ? 'sur' : p[0] < L.cols/2 ? 'oeste' : 'este') : ' · cerrado') + '</li>').join('');
     const nLog = logrosPorCobrar();
-    return '<h2>Diario del viajero</h2><p>' + esc(rango().nombre) + ' · nivel ' + MUNDO.nivel(prog.xp) + ' · ' + prog.xp + ' XP · ◈ ' + prog.puntos + ' monedas</p>' + (EC() ? '<button class="rq-b" data-a="verLogros">🏮 Recompensas' + (nLog ? ' · ' + nLog + ' por cobrar' : '') + '</button>' : '') + cabGuia + '<h3>Misiones</h3><ul class="rq-lista">' + tareas + '</ul>' + aliados +
+    return '<h2>Diario del viajero</h2><p>' + esc(rango().nombre) + ' · nivel ' + nivelDe(prog.xp) + ' · ' + prog.xp + ' XP · ◈ ' + prog.puntos + ' monedas</p>' + (EC() ? '<button class="rq-b" data-a="verLogros">🏮 Recompensas' + (nLog ? ' · ' + nLog + ' por cobrar' : '') + '</button>' : '') + cabGuia + '<h3>Misiones</h3><ul class="rq-lista">' + tareas + '</ul>' + aliados +
       (prog.huevo ? '<p>Dofus verde · ' + prog.cargaJade + '/4 hacia el próximo bloqueo</p><button class="rq-b sec" data-a="verJade">Volver a ver la entrega</button>' : '') +
       '<h3>Salidas desde ' + esc(L.nombre) + '</h3><ul class="rq-lista">' + rutas + '</ul>' + cerrar;
   }
@@ -3790,7 +4054,7 @@
   function soltarJoy() { joy.id = null; joy.x = joy.y = 0; joy.sprint = false; if (joyBase) { joyBase.style.display = 'none'; joyPomo.style.display = 'none'; } }
 
   function cargarImagenes() {
-    for (const id of [...Object.keys(MUNDO.zonas), ...Object.values({...ALDEA.personajes,...MUNDO.personajes}).map(p=>p.sprite).filter(Boolean), 'dofus-verde', 'casa-pintada', 'cedro-pintado', 'cerezo-pintado', 'torii-pintado', 'fragua-ancestral','cedro-entrenamiento','puesto-ruleta','ninja-shhh','cofre','farol-torre','farol-torre-apagado','farol-piedra','ronin-correr','ronin-quieto','ronin-cargar','ronin-lanzar',(typeof ZUMOS!=='undefined'?ZUMOS.imagen:'puesto-ruleta'),(typeof ZUMOS!=='undefined'&&ZUMOS.gato||'puesto-ruleta'),(typeof ZUMOS!=='undefined'?ZUMOS.fondoJuego:'puesto-ruleta'),'atlas-casas','atlas-naturaleza','atlas-monumentos','atlas-suelos','ronin-idle','ronin-paso1','ronin-paso2','muro-shoji','muro-piedra','enemigo-monje','enemigo-cesta','enemigo-ogro','enemigo-cabeza']) {
+    for (const id of [...Object.keys(MUNDO.zonas), ...Object.values({...ALDEA.personajes,...MUNDO.personajes}).map(p=>p.sprite).filter(Boolean), 'dofus-verde', 'casa-pintada', 'cedro-pintado', 'cerezo-pintado', 'torii-pintado', 'fragua-ancestral','cedro-entrenamiento','puesto-ruleta','ninja-shhh','cofre','loto-turbo','farol-torre','farol-torre-apagado','farol-piedra','ronin-correr','ronin-quieto','ronin-cargar','ronin-lanzar',(typeof ZUMOS!=='undefined'?ZUMOS.imagen:'puesto-ruleta'),(typeof ZUMOS!=='undefined'&&ZUMOS.gato||'puesto-ruleta'),(typeof ZUMOS!=='undefined'?ZUMOS.fondoJuego:'puesto-ruleta'),'atlas-casas','atlas-naturaleza','atlas-monumentos','atlas-suelos','ronin-idle','ronin-paso1','ronin-paso2','muro-shoji','muro-piedra','enemigo-monje','enemigo-cesta','enemigo-ogro','enemigo-cabeza']) {
       if (estampas[id]) continue;
       const img = new Image(); img.src = rutaArte(id); estampas[id] = img;
     }
@@ -3798,12 +4062,26 @@
       delete imagenes[k]; const src = CONFIG.sprites[k]; if (!src) continue;
       const im = new Image(); im.onload = () => { imagenes[k] = im; }; im.src = src;
     }
+    // v0.58: la barra de la pantalla de carga avanza según las imágenes que ya están listas
+    const lista = Object.values(estampas), t0 = performance.now();
+    const mira = () => {
+      const hechas = lista.filter(i => i.complete).length, p = lista.length ? hechas / lista.length : 1;
+      if (window.rqCarga) window.rqCarga(.35 + .65 * p, hechas + ' / ' + lista.length);
+      if (p >= 1 || performance.now() - t0 > 15000) { if (window.rqCargaFin) window.rqCargaFin(); } else setTimeout(mira, 80);
+    };
+    mira();
   }
 
-  // v0.38: kanji en un medallón delante de cada botón de arriba (se cambian aquí)
-  const ICONOS_BARRA = { dojo: '道', diario: '巻', atlas: '地', equipo: '袋', plano: '図' };
+  // v0.58: kanji en un medallón delante de cada botón de arriba (se cambian aquí)
+  const ICONOS_BARRA = { dojo: '道', diario: '巻', atlas: '地', equipo: '袋', plano: '図', amigos: '友' };
   function ponerIconos() {
     for (const b of mandos.querySelectorAll('.rq-m.ancho')) { const ic = ICONOS_BARRA[b.dataset.a]; if (!ic || b.querySelector('.rq-ico')) continue; const t = b.textContent; b.textContent = ''; const sp = document.createElement('span'); sp.className = 'rq-ico'; sp.textContent = ic; b.append(sp, document.createTextNode(t)); }
+  }
+  // v0.58: regalo de pruebas (config.js > regaloPruebas). Se da una sola vez por versión del regalo
+  function regaloPruebas() {
+    const R = CONFIG.regaloPruebas; if (!R || !prog || prog.regaloVisto === R.version) return;
+    prog.fichas += R.fichas || 0; prog.puntos += R.monedas || 0; for (const a of R.armas || []) if (!prog.armas.includes(a)) prog.armas.push(a); if ((R.armas || []).length && !prog.arma) prog.arma = R.armas[1] || R.armas[0]; prog.regaloVisto = R.version; guardarProg();
+    setTimeout(() => decir('Regalo de pruebas: +' + (R.fichas || 0) + ' fichas y +' + (R.monedas || 0).toLocaleString('es') + ' monedas', 4), 2500);
   }
   function montar(el) {
     leerOpciones();
@@ -3820,6 +4098,8 @@
     btnAccion = document.createElement('button'); btnAccion.className = 'rq-accion'; btnAccion.dataset.a = 'accion';
     btnLanzar = document.createElement('button'); btnLanzar.className = 'rq-lanzar'; btnLanzar.textContent = 'LANZAR'; btnLanzar.setAttribute('aria-label', 'Lanzar reliquia');
     btnLanzar.addEventListener('pointerdown', ev => { ev.preventDefault(); ev.stopPropagation(); lanzar(); });
+    btnCorte = document.createElement('button'); btnCorte.className = 'rq-corte'; btnCorte.innerHTML = '<b>✕</b><span>EJECUTAR</span>'; btnCorte.setAttribute('aria-label', 'Ejecutar por la espalda');
+    btnCorte.addEventListener('pointerdown', ev => { ev.preventDefault(); ev.stopPropagation(); ejecutar(); });
     btnCambiar = document.createElement('button'); btnCambiar.className = 'rq-cambiar'; btnCambiar.textContent = '⇄'; btnCambiar.setAttribute('aria-label', 'Cambiar pergamino');
     btnCambiar.addEventListener('pointerdown', ev => { ev.preventDefault(); ev.stopPropagation(); siguienteArma(); });
     dlgEl = document.createElement('div'); dlgEl.className = 'rq-dlg'; dlgEl.hidden = true; dlgEl.setAttribute('role', 'status'); dlgEl.addEventListener('click', avanzarDlg);
@@ -3832,13 +4112,14 @@
     btnEquipo = document.createElement('button'); btnEquipo.className = 'rq-m ancho';
     btnEquipo.dataset.a = 'equipo'; btnEquipo.textContent = 'EQUIPO'; mandos.appendChild(btnEquipo);
     btnPlano = document.createElement('button');btnPlano.className='rq-m ancho';btnPlano.dataset.a='plano';btnPlano.textContent='MAPA';mandos.appendChild(btnPlano);
+    btnAmigos = document.createElement('button'); btnAmigos.className = 'rq-m ancho'; btnAmigos.dataset.a = 'amigos'; btnAmigos.textContent = 'AMIGOS'; mandos.appendChild(btnAmigos);
     ponerIconos();
     btnArte = document.createElement('button'); btnArte.className = 'rq-m'; btnArte.dataset.a = 'arte'; btnArte.textContent = '❈'; btnArte.setAttribute('aria-label','Contemplar la región'); mandos.appendChild(btnArte);
     escenaJade = document.createElement('div'); escenaJade.className = 'rq-escena-jade'; escenaJade.hidden = true;
     escenaJade.setAttribute('role','dialog'); escenaJade.setAttribute('aria-modal','true'); escenaJade.setAttribute('aria-label','Dofus verde obtenido');
     escenaJade.innerHTML = '<button class="rq-m ancho" data-a="cerrarJade">Saltar</button>';
-    cont.append(joyBase, joyPomo, mandos, btnSprint, btnLanzar, btnCambiar, btnAccion, dlgEl, ui, escenaJade);
-    etiquetaAccion = null; leerProg();
+    cont.append(joyBase, joyPomo, mandos, btnSprint, btnLanzar, btnCambiar, btnCorte, btnAccion, dlgEl, ui, escenaJade);
+    etiquetaAccion = null; leerProg(); regaloPruebas(); setTimeout(() => { if (jugador) iniciarRed(); }, 1200);
     if (window.matchMedia && matchMedia('(pointer:coarse)').matches) cont.classList.add('tactil');
 
     // botones
@@ -3882,8 +4163,16 @@
       else if (a === 'seguir' || a === 'pausa') pausar();
       else if (a === 'opciones') { opciones = !opciones; if (opciones && fase === 'jugando') { fase = 'pausa'; opciones = 'pausa'; } else if (!opciones && fase === 'pausa') fase = 'jugando'; pintarUI(); }
       else if (a === 'cartaTorre' && torre) elegirCarta(b.dataset.id);
-      else if (a === 'seguirTorre' && torre && torre.elegida && fase === 'finRonda') { ronda++; iniciarRonda(); }
+      else if (a === 'seguirTorre' && torre && torre.elegida && fase === 'finRonda' && !(pareja && !pareja.anfitrion)) { ronda++; if (pareja) ON()?.enviar('piso', { ronda, semilla: pareja.semilla, mods: torre.mods }, pareja.id); iniciarRonda(); }
       else if (a === 'cobrarTorre' && torre && fase === 'finRonda') cobrarTorre(+b.dataset.id);
+      else if (a === 'amigos') { if (fase === 'jugando') return; iniciarRed(); panelAmigos = true; tienda = false; panelMundo = ''; pintarUI(); }
+      else if (a === 'cerrarAmigos') { panelAmigos = false; pintarUI(); }
+      else if (a === 'pedirAmistad') { ON()?.enviar('amistad', { nombre: jugador }, b.dataset.id); decir('Petición de amistad enviada', 2); }
+      else if (a === 'invitarAmigo') { panelAmigos = false; invitar(b.dataset.id); pintarUI(); }
+      else if (a === 'amistadSi' && avisoRed) { prog.amigos = prog.amigos || {}; prog.amigos[avisoRed.de] = { nombre: avisoRed.nombre }; guardarProg(); ON()?.enviar('amistadSi', { nombre: jugador }, avisoRed.de); decir(avisoRed.nombre + ' ya es tu amigo de la infancia', 2.6); avisoRed = null; pintarUI(); }
+      else if (a === 'invitaSi' && avisoRed) { const av = avisoRed; pareja = { id: av.de, nombre: av.nombre, anfitrion: false, semilla: av.semilla, otro: null }; ON()?.enviar('invitaSi', {}, av.de); tienda = false; panelMundo = ''; dlg = null; empezarPareja(av.semilla, false); }
+      else if (a === 'avisoNo' && avisoRed) { if (avisoRed.tipo === 'invita') ON()?.enviar('invitaNo', {}, avisoRed.de); avisoRed = null; pintarUI(); }
+      else if (a === 'cerrarSubida') { subidaNivel = null; pintarUI(); }
       else if (a === 'cobrarDiaria') { const p = EC().diaria[(prog.rachaDiaria || 1) - 1]; const L2 = darPremio(p, rango().mult); prog.diaCobrado = hoy(); guardarProg(); panelEco = null; decir('Día ' + prog.rachaDiaria + ': ' + L2.join(' · '), 3.5); SON.entregar(); pintarUI(); }
       else if (a === 'cobrarLogro') { const l = EC().logros.find(x => x.id === b.dataset.id); prog.cobrados = prog.cobrados || {}; if (l && !prog.cobrados[l.id] && (prog.stats?.[l.stat] || 0) >= l.meta) { prog.cobrados[l.id] = true; const L2 = darPremio(l.premio, rango().mult); guardarProg(); decir(l.nombre + ': ' + L2.join(' · '), 3.2); SON.entregar(); } pintarUI(); }
       else if (a === 'verLogros') { panelEco = 'logros'; pintarUI(); }
@@ -3895,6 +4184,8 @@
       else if (a === 'otraFruta') empezarFruta();
       else if (a === 'salirFruta') { fru = null; fase = 'aldea'; pintarUI(); }
       else if (a === 'cerrarOpciones') { if (opciones === 'pausa' && fase === 'pausa') fase = 'jugando'; opciones = false; pintarUI(); }
+      else if (a === 'exportar') { const cod = 'RQ1:' + btoa(unescape(encodeURIComponent(JSON.stringify({ prog, jugador })))); (navigator.clipboard?.writeText(cod) || Promise.reject()).then(() => decir('Copia guardada en el portapapeles', 2.5), () => prompt('Copia este código y guárdalo:', cod)); }
+      else if (a === 'importar') { const cod = prompt('Pega aquí el código de tu partida (empieza por RQ1:)'); if (cod) try { const d = JSON.parse(decodeURIComponent(escape(atob(cod.trim().replace(/^RQ1:/, ''))))); if (!d.prog || typeof d.prog !== 'object') throw 0; localStorage.setItem('reliquias-progreso', JSON.stringify(d.prog)); if (d.jugador) localStorage.setItem('reliquias-jugador', d.jugador); location.reload(); } catch (e) { alert('Ese código no es válido.'); } }
       else if (a === 'borrarTodo') { if (Date.now() - borrarArmado > 3000) { borrarArmado = Date.now(); pintarUI(); } else { borrarArmado = 0; try { localStorage.removeItem('reliquias-progreso'); localStorage.removeItem('reliquias-jugador'); } catch (e) { } location.reload(); } }
       else if (a === 'silencio') { silencio = !silencio; b.style.opacity = silencio ? 0.4 : 1; }
       else if (a === 'completa') { try { (document.fullscreenElement ? document.exitFullscreen() : cont.requestFullscreen()).catch(() => { }); } catch (e) { } }
@@ -3908,6 +4199,8 @@
     // táctil / ratón: joystick flotante donde pongas el dedo. Doble toque = sprint
     const sp = on => { sprintBoton = on; btnSprint.classList.toggle('on', on); };
     btnAccion.addEventListener('pointerdown',ev=>{
+      // v0.58: en el dojo la técnica sale al tocar (también con el otro dedo en el joystick o corriendo)
+      if(fase==='jugando'&&ev.button<=0){ev.preventDefault();ev.stopPropagation();usarArma();etiquetaAccion='';btnAccion.dataset.ya=Date.now();return;}
       if(!cerca?.tronco||ev.button>0)return;
       pulsandoGolpe=true;golpearTronco();
       try{btnAccion.setPointerCapture(ev.pointerId);}catch(e){}

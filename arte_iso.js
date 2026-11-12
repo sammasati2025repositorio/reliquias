@@ -300,7 +300,7 @@ const ARTE_ISO = (() => {
     // reliquias lanzadas: la sombra se queda en el suelo y encoge cuanto más alto va el objeto
     for(const q of s.thrown||[])push(q.x,q.y,()=>{const qq=P(q.x,q.y),k=Math.max(.35,1-q.z/(T*2.4)),w=(q.pesada?7.5:5.5)*k;ellipse(c,qq[0],qq[1],w,w*.34,'rgba(20,15,25,'+(.5*k).toFixed(2)+')');
       bill(q.x,q.y,()=>{c.save();c.translate(q.x,q.y-3-q.z);c.rotate(q.rot||0);const sq=q.z<2&&q.rebote?1.12:1;c.scale(sq,1/sq);d.gem(0,0,4+q.gema.valor*.5,q.gema.valor);c.restore();},1);});
-    for(const o of s.props||[])push(o.x,o.y,()=>bill(o.x,o.y,o.f,1));   // cofres y otros objetos del motor
+    for(const o of s.props||[])push(o.x,o.y,()=>bill(o.x,o.y,o.f,o.esc||1));   // cofres y otros objetos del motor
     for(const gem of s.gems)if(gem.estado==='suelo'){const x=(gem.tx+.5)*T,y=(gem.ty+.5)*T;push(x,y,()=>{const q=P(x,y);ellipse(c,q[0],q[1],6,2,'#20172444');bill(x,y,()=>d.gem(x,y-3+Math.sin(t*3+gem.tx)*1.2,4+gem.valor*.5,gem.valor),1);});}
     for(const b of s.boosts)if(b.t<=0){const x=(b.tx+.5)*T,y=(b.ty+.5)*T;push(x,y,()=>bill(x,y,()=>d.boost(x,y),1));}
     for(const b of s.portals){const x=(b.tx+.5)*T,y=(b.ty+.5)*T;push(x,y,()=>bill(x,y,()=>d.portal(b),1));}

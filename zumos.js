@@ -8,7 +8,7 @@ const ZUMOS = {
   vendedora: 'Momo',
   gato: 'momo-gato',                 // assets/mundo/momo-gato.webp: Momo, la gata que atiende el puesto
   retrato: 'assets/momo.jpg',        // imagen grande de Momo en el diálogo
-  altoGato: 1.3,                    // lo alto que se dibuja Momo, en casillas
+  altoGato: 1.0,                    // lo alto que se dibuja Momo, en casillas
   puesto: { x: 3, y: 8, ancho: 2, fondo: 2 },   // casillas que ocupa en la aldea (esquina de arriba-izquierda y tamaño)
   imagen: 'puesto-zumos',            // assets/mundo/puesto-zumos.webp: el carrito que se ve en la aldea
   altoPuesto: 2.6,                   // lo alto que se dibuja el carrito, en casillas (súbelo para hacerlo más grande)
@@ -18,7 +18,7 @@ const ZUMOS = {
   frasesEntrada: [
     '¡Miau! Bienvenido a Zumos de Momo. El que corta, bebe.',
     'Pasa el dedo por la fruta en el aire. Cuantas más de un tajo, mejor.',
-    'Ojo con los petardos. Y si cortas un melocotón maduro... ponte de lado.'
+    'Ojo con las pócimas malditas. Y si cortas un melocotón maduro... ponte de lado.'
   ],
 
   // Frutas. peso = lo a menudo que sale · puntos = lo que vale · radio en píxeles de juego
@@ -37,6 +37,7 @@ const ZUMOS = {
     pina:      { nombre: 'Piña',      peso: 7,  puntos: 3, radio: 17, piel: '#e0a832', piel2: '#9a6a18', pulpa: '#ffe066', semilla: '#c89a30', jugo: '#ffe680', rombos: true, corona: true },
     melon:     { nombre: 'Melón',     peso: 7,  puntos: 3, radio: 20, piel: '#d9c860', piel2: '#8f8a30', pulpa: '#ffab5a', semilla: '#f6e6b0', jugo: '#ffc07a', rayas: true },
     uvas:      { nombre: 'Uvas',      peso: 8,  puntos: 2, radio: 13, piel: '#7a3a9a', piel2: '#4a1a66', pulpa: '#d8f0a0', semilla: '#5a3a20', jugo: '#9a4ab8', racimo: true },
+    lichi:     { nombre: 'Lichi',     peso: 10, puntos: 2, radio: 12, piel: '#e0485a', piel2: '#a8283a', pulpa: '#f7ecdf', semilla: '#6a2a14', jugo: '#f6e8e0' },
     dorada:    { nombre: 'Níspero dorado', peso: 3, puntos: 10, radio: 12, piel: '#ffe066', piel2: '#d9a520', pulpa: '#fff2b0', semilla: '#8a5a20', jugo: '#ffe680', brilla: true }
   },
   puntosSquirt: 6,
@@ -45,7 +46,20 @@ const ZUMOS = {
   combo: { minimo: 3, extra: 2 },     // cortar 3 o más de un tajo da 2 puntos más por fruta
 
   // Premio al terminar: monedas por punto y fichas de la Rueda del Cedro si llegas a la marca
+  // Zumos para la Torre: según los puntos, Momo te da uno (el mejor que alcances). Se beben solos al entrar a la Torre.
+  // desde = puntos mínimos · mod = mejora durante esa incursión (igual que las cartas de torre.js) · max = cuántos puedes guardar
+  zumos: [
+    { id: 'melocoton', nombre: 'Zumo de melocotón', desc: '+20 % de aguante en tu próxima Torre', desde: 40, mod: { aguante: 0.2 }, max: 3 },
+    { id: 'sandia',    nombre: 'Zumo de sandía',    desc: '+8 % de velocidad en tu próxima Torre', desde: 70, mod: { velocidad: 0.08 }, max: 3 },
+    { id: 'dorado',    nombre: 'Néctar dorado',     desc: 'Los espectros ven un 10 % menos en tu próxima Torre', desde: 100, mod: { vista: 0.1 }, max: 2 }
+  ],
   precioEntrada: 25,                 // monedas que cuesta cada partida
   sinDinero: 'La entrada son {p} monedas. Vuelve cuando las tengas, miau.',
-  premio: { monedasPorPunto: 0.5, fichasSiLlegas: 1, marcaFicha: 70 }   // 0.5 = 1 moneda cada 2 puntos: con 50 pts recuperas la entrada
+  premio: { monedasPorPunto: 0.5, fichasSiLlegas: 1, marcaFicha: 70, comboFicha: 4 },   // ficha si llegas a 70 pts O si haces un combo de 4 de un tajo
+  // Gran premio: muy difícil. unaVez = solo se cobra una vez por jugador
+  granPremio: { puntos: 450, monedas: 100000, unaVez: true },
+  tamanoImagen: 2.7,
+  gravedad: 1.05,                    // lo rápido que caen las frutas (más bajo = más tiempo en el aire)                 // tamaño de las frutas con imagen (veces su radio)
+  cortesTrozos: 3,                   // cuántas veces se puede cortar una fruta (1 = entera→mitades, 2 = cuartos, 3 = trocitos)
+  puntosTrozo: 0,                    // puntos por cortar un trozo ya cortado (0 = solo por gusto)   // 0.5 = 1 moneda cada 2 puntos: con 50 pts recuperas la entrada
 };
