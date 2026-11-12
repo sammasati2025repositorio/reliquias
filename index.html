@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d0a10">
+<title>Reliquias v0.38</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0a10; overflow: hidden; overscroll-behavior: none; }
+  #juego { position: fixed; inset: 0; }
+</style>
+</head>
+<body>
+<div id="juego"></div>
+<!-- El orden importa: primero lo editable, al final el motor -->
+<!-- personajes.js va ANTES del motor: es quien dibuja a todos -->
+<script src="arte.js"></script>
+<script src="config.js"></script>
+<script src="niveles.js"></script>
+<script src="aldea.js"></script>
+<script src="mundo.js"></script>
+<script src="equipo.js"></script>
+<script src="taller.js"></script>
+<script src="personajes.js"></script>
+<script src="musica.js"></script>
+<script src="arte_iso.js"></script>
+<script src="zumos.js"></script>
+<script src="economia.js"></script>
+<script src="torre.js"></script>
+<script src="motor.js"></script>
+
+</body>
+</html>
