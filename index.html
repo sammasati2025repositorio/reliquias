@@ -9,18 +9,18 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/app/icono-192.png">
 <link rel="apple-touch-icon" href="assets/app/icono-180.png">
-<title>Reliquias v0.58</title>
+<title>Reliquias v0.61</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0d0a10; overflow: hidden; overscroll-behavior: none; }
   #juego { position: fixed; inset: 0; }
   /* pantalla de carga */
-  #carga{position:fixed;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;background:#1d3a14;transition:opacity .6s;overflow:hidden}
+  #carga{position:fixed;inset:0;z-index:99;transition:opacity .8s;display:flex;align-items:center;justify-content:center;background:#1d3a14;transition:opacity .6s;overflow:hidden}
   #carga::before{content:"";position:absolute;inset:-30px;background:url(assets/app/fondo-carga.webp) center/cover;filter:blur(18px) brightness(.7)}
   #carga.fuera{opacity:0;pointer-events:none}
   #carga .lamina{position:relative;flex:none;width:max(100vw,min(177.7vh,175vw));aspect-ratio:1672/941;background:url(assets/app/fondo-carga.webp) center/100% 100% no-repeat;box-shadow:0 10px 40px #0009}
   /* la barra real va encima de la barra pintada en la ilustración */
   #carga .barra{position:absolute;left:23.5%;top:79.1%;width:52.6%;height:3.7%;border-radius:999px;background:#2a1708;overflow:hidden;box-shadow:inset 0 2px 5px #000b}
-  #carga .barra i{position:absolute;left:0;top:0;bottom:0;width:2%;border-radius:999px;background:linear-gradient(#fff0a0,#f6c21c 55%,#d08a0a);box-shadow:0 0 12px #ffd35acc;transition:width .25s}
+  #carga .barra i{position:absolute;left:0;top:0;bottom:0;width:2%;border-radius:999px;background:linear-gradient(#fff0a0,#f6c21c 55%,#d08a0a);box-shadow:0 0 12px #ffd35acc;transition:width .6s ease-out}
   #carga p{position:absolute;left:50%;width:min(100vw,60%);transform:translateX(-50%);top:88%;margin:0;text-align:center;font:italic clamp(12px,2.2vw,20px) Georgia,serif;color:#fff6d8;text-shadow:0 2px 4px #000}
 </style>
 </head>
@@ -31,7 +31,7 @@
   (function(){var el=document.getElementById('carga'),bar=el.querySelector('i'),txt=el.querySelector('p'),n=0,tot=document.querySelectorAll('script[src]').length||15,frases=['Preparando la aldea…','Despertando a los espectros…','Afilando la katana…','Momo pela melocotones…','El kappa cuenta sus pepinos…'];
     window.rqCarga=function(p,t){bar.style.width=Math.max(2,Math.min(100,p*100))+'%';txt.textContent=frases[Math.min(frases.length-1,Math.floor(p*frases.length))]};
     document.addEventListener('load',function(e){if(e.target.tagName==='SCRIPT'){n++;rqCarga(.35*n/tot)}},true);
-    window.rqCargaFin=function(){rqCarga(1);setTimeout(function(){el.classList.add('fuera');setTimeout(function(){el.remove()},700)},350)};
+    var t0=Date.now(),MIN=2600;window.rqCargaFin=function(){if(window.rqFinYa)return;window.rqFinYa=1;var espera=Math.max(0,MIN-(Date.now()-t0));rqCarga(.9);setTimeout(function(){rqCarga(1);setTimeout(function(){el.classList.add('fuera');setTimeout(function(){el.remove()},800)},600)},espera)};
     setTimeout(function(){window.rqCargaFin&&rqCargaFin()},20000);
     if(location.hash==='#carga'){window.rqCargaFin=function(){};}   // solo para ver la pantalla de carga quieta
     if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0)navigator.serviceWorker.register('sw.js').catch(function(){});
