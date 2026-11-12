@@ -1,5 +1,5 @@
 // Guarda el juego en el móvil para que abra rápido y funcione sin cobertura (lo online sí necesita internet)
-const CACHE = 'reliquias-v057';
+const CACHE = 'reliquias-v062';
 self.addEventListener('install', e => { self.skipWaiting(); });
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {

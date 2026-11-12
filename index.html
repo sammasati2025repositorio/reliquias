@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/app/icono-192.png">
 <link rel="apple-touch-icon" href="assets/app/icono-180.png">
-<title>Reliquias v0.61</title>
+<title>Reliquias v0.62</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0d0a10; overflow: hidden; overscroll-behavior: none; }
   #juego { position: fixed; inset: 0; }
@@ -21,17 +21,29 @@
   /* la barra real va encima de la barra pintada en la ilustración */
   #carga .barra{position:absolute;left:23.5%;top:79.1%;width:52.6%;height:3.7%;border-radius:999px;background:#2a1708;overflow:hidden;box-shadow:inset 0 2px 5px #000b}
   #carga .barra i{position:absolute;left:0;top:0;bottom:0;width:2%;border-radius:999px;background:linear-gradient(#fff0a0,#f6c21c 55%,#d08a0a);box-shadow:0 0 12px #ffd35acc;transition:width .6s ease-out}
-  #carga p{position:absolute;left:50%;width:min(100vw,60%);transform:translateX(-50%);top:88%;margin:0;text-align:center;font:italic clamp(12px,2.2vw,20px) Georgia,serif;color:#fff6d8;text-shadow:0 2px 4px #000}
+  /* v0.62: mensajes con humor y curiosidades debajo de la barra (se editan en frases-carga.js) */
+  #carga .msg{position:absolute;z-index:2;left:50%;bottom:max(3vh,12px);width:min(92vw,760px);box-sizing:border-box;transform:translateX(-50%);text-align:center;padding:.5em 1em;border-radius:14px;background:#1a0e05b0;box-shadow:0 4px 14px #0007;transition:opacity .35s}
+  #carga .msg b{display:block;font:bold clamp(10px,1.5vw,14px) Georgia,serif;letter-spacing:.12em;text-transform:uppercase;color:#f6c21c;margin-bottom:.2em}
+  @media (orientation:portrait){#carga .msg{bottom:14vh}}
+  #carga .msg span{font:italic clamp(12px,2vw,19px)/1.3 Georgia,serif;color:#fff6d8;text-shadow:0 2px 4px #000}
+  #carga .pct{position:absolute;left:50%;top:79.1%;height:3.7%;transform:translateX(-50%);display:flex;align-items:center;font:bold clamp(10px,1.6vw,15px) Georgia,serif;color:#3a2006;text-shadow:0 1px 0 #fff8}
 </style>
 </head>
 <body>
-<div id="carga"><div class="lamina"><div class="barra"><i></i></div><p>Preparando la aldea…</p></div></div>
+<div id="carga"><div class="lamina"><div class="barra"><i></i></div><div class="pct">0 %</div></div><div class="msg"><b>Cargando</b><span>Preparando la aldea…</span></div></div>
+<script src="frases-carga.js"></script>
 <script>
   // barra de carga: primero los archivos del juego, luego las imágenes (motor.js llama a rqCarga)
-  (function(){var el=document.getElementById('carga'),bar=el.querySelector('i'),txt=el.querySelector('p'),n=0,tot=document.querySelectorAll('script[src]').length||15,frases=['Preparando la aldea…','Despertando a los espectros…','Afilando la katana…','Momo pela melocotones…','El kappa cuenta sus pepinos…'];
-    window.rqCarga=function(p,t){bar.style.width=Math.max(2,Math.min(100,p*100))+'%';txt.textContent=frases[Math.min(frases.length-1,Math.floor(p*frases.length))]};
+  (function(){var el=document.getElementById('carga'),bar=el.querySelector('i'),pct=el.querySelector('.pct'),caja=el.querySelector('.msg'),tit=caja.querySelector('b'),txt=caja.querySelector('span'),n=0,tot=document.querySelectorAll('script[src]').length||15;
+    // v0.62: mensajes que van rotando solos (humor y curiosidades mezclados)
+    var C=window.CARGA||{humor:['Preparando la aldea…'],curiosidades:[]},lista=[];
+    C.humor.forEach(function(f){lista.push(['Mientras tanto…',f])});C.curiosidades.forEach(function(f){lista.push(['¿Sabías que…?',f])});
+    for(var k=lista.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1)),t=lista[k];lista[k]=lista[j];lista[j]=t}
+    var im=0;function otra(){var m=lista[im++%lista.length];caja.style.opacity=0;setTimeout(function(){tit.textContent=m[0];txt.textContent=m[1];caja.style.opacity=1},350)}
+    if(lista.length){otra();var giro=setInterval(otra,(C.cada||2.8)*1000)}
+    var maxP=0;window.rqCarga=function(p){p=Math.max(maxP,Math.min(1,p));maxP=p;bar.style.width=Math.max(2,p*100)+'%';pct.textContent=Math.round(p*100)+' %'};
     document.addEventListener('load',function(e){if(e.target.tagName==='SCRIPT'){n++;rqCarga(.35*n/tot)}},true);
-    var t0=Date.now(),MIN=2600;window.rqCargaFin=function(){if(window.rqFinYa)return;window.rqFinYa=1;var espera=Math.max(0,MIN-(Date.now()-t0));rqCarga(.9);setTimeout(function(){rqCarga(1);setTimeout(function(){el.classList.add('fuera');setTimeout(function(){el.remove()},800)},600)},espera)};
+    var t0=Date.now(),MIN=(C.minimo||5.5)*1000;window.rqCargaFin=function(){if(window.rqFinYa)return;window.rqFinYa=1;var espera=Math.max(0,MIN-(Date.now()-t0));setTimeout(function(){rqCarga(1);clearInterval(giro);setTimeout(function(){el.classList.add('fuera');setTimeout(function(){el.remove()},800)},700)},espera)};
     setTimeout(function(){window.rqCargaFin&&rqCargaFin()},20000);
     if(location.hash==='#carga'){window.rqCargaFin=function(){};}   // solo para ver la pantalla de carga quieta
     if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0)navigator.serviceWorker.register('sw.js').catch(function(){});
