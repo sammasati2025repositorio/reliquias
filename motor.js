@@ -115,6 +115,31 @@
   }
   const rutaArte = id => arteIntegrado['assets/mundo/' + id + '.webp'];
 
+  // ---------- v0.65 EPÍLOGO Y CRÉDITOS (textos en final.js) ----------
+  let epilogo = null;
+  function abrirEpilogo() {
+    const F = FN(); if (!F || epilogo) return;
+    teclas.clear(); soltarJoy();
+    const el = document.createElement('div'); el.className = 'rq-epilogo'; cont.appendChild(el);
+    epilogo = { el, i: 0 };
+    const retrato = id => { const p = id && ({ ...(ALDEA.personajes || {}), ...MUNDO.personajes })[id]; return p && p.retrato ? '<img src="' + p.retrato + '" alt="">' : '<div class="rq-ep-sello">水</div>'; };
+    const pinta = () => {
+      const k = epilogo.i, L2 = F.epilogo;
+      if (k < L2.length) {
+        const e = L2[k];
+        el.innerHTML = '<div class="rq-ep-lamina">' + retrato(e.retrato) + '<h2>' + esc(e.titulo) + '</h2><p>' + esc(e.texto) + '</p><small>' + (k + 1) + ' / ' + L2.length + ' · toca para seguir</small></div>';
+        [392, 494, 587][k % 3] && pitido([392, 494, 587, 659][k % 4], .5, 'sine', .35);
+      } else if (k === L2.length) {
+        el.innerHTML = '<div class="rq-ep-creditos"><div class="rq-ep-rollo">' + F.creditos.map(t => t ? '<p>' + esc(t) + '</p>' : '<br>').join('') + '</div></div>';
+        [523, 659, 784, 1047].forEach((f, j) => setTimeout(() => pitido(f, .7, 'triangle', .45), j * 260));
+      } else if (k === L2.length + 1) {
+        el.innerHTML = '<div class="rq-ep-lamina"><div class="rq-ep-sello">終</div><h2>FIN</h2><p>Has terminado la historia.</p>' + (F.leyenda ? '<p><b>' + esc(F.leyenda.nombre) + ' desbloqueado.</b><br>' + esc(F.leyenda.desc) + '<br>Actívalo en el DOJO.</p>' : '') + '<small>toca para volver</small></div>';
+      } else { el.remove(); epilogo = null; pintarUI(); return; }
+    };
+    el.addEventListener('click', ev => { ev.stopPropagation(); epilogo.i++; pinta(); });
+    pinta();
+  }
+
   const reduccionSigilo = () => Math.min(.10,efectoMejora('sigilo')+atributo('sigilo')/100);
   const D = () => { const b = CONFIG.dificultades[dif] || CONFIG.dificultades.normal, k = 1-reduccionSigilo(); return k === 1 ? b : Object.assign({}, b, { alcance: b.alcance * k, oido: b.oido * k }); };
   const col = () => CONFIG.colores;
@@ -407,7 +432,8 @@
     o = o || {};
     dif = o.difficulty || o.dificultad || dif;
     mapaIni = o.map != null ? o.map : (o.mapa != null ? o.mapa : mapaIni);
-    expedicion = !!o.expedicion; torre = o.torre && TW() ? nuevaTorre() : null;
+    expedicion = !!o.expedicion; torre = o.torre && TW() ? nuevaTorre(o.final ? FN() : null) : null;
+    if (torre && prog.leyendaOn && FN()?.leyenda) for (const k in FN().leyenda.mods) torre.mods[k] = (torre.mods[k] || 0) + FN().leyenda.mods[k];   // v0.65 Modo Leyenda
     if (torre && prog.zumos) {   // los zumos de Momo se beben al entrar a la Torre (uno de cada)
       const bebidos = [];
       for (const z of (ZU()?.zumos || [])) if (prog.zumos[z.id] > 0) { prog.zumos[z.id]--; for (const k in z.mod) torre.mods[k] = (torre.mods[k] || 0) + z.mod[k]; bebidos.push(z.nombre); }
@@ -721,7 +747,7 @@
     }
     if (jade && prog.cargaJade === 0) {
       e.lento = HV.duracion || 2.2; h.inv = Math.max(h.inv, 1.2); e.estado = 'busca'; e.ruta = []; e.tEspera = 1; efectos.push({ tipo: 'jade', x: h.x, y: h.y, t: .75, dur: .75, r: 2 * T });
-      [660, 880, 1320].forEach((f, i) => setTimeout(() => pitido(f, 0.18, 'sine', .7), i * 80)); decir('El Dofus verde detiene el golpe', 2.2); return;
+      [660, 880, 1320].forEach((f, i) => setTimeout(() => pitido(f, 0.18, 'sine', .7), i * 80)); decir('El Huevo de jade detiene el golpe', 2.2); return;
     }
     if (L.exterior) {
       h.x = (L.inicio[0] + .5) * T; h.y = (L.inicio[1] + .5) * T; h.inv = 2;
@@ -755,9 +781,11 @@
 
   // ---------- v0.61 TORRE DEL DOJO: 15 pisos generados, objetivos, cartas, botín y jefes (datos en torre.js) ----------
   let torre = null;
-  const TW = () => (typeof TORRE !== 'undefined' ? TORRE : null);
+  const TW = () => (torre && torre.def) || (typeof TORRE !== 'undefined' ? TORRE : null);   // v0.65: torre.def = capítulo final (final.js)
+  const FN = () => (typeof FINAL !== 'undefined' ? FINAL : null);
+  const cartasT = () => TW().cartas || TORRE.cartas;
   const modT = k => (torre && torre.mods[k]) || 0;
-  function nuevaTorre() { return { mods: {}, cartas: [], botin: { monedas: 0, materiales: {}, fichas: 0, xp: 0 }, obj: null, faro: [], lenta: 0 }; }
+  function nuevaTorre(def) { return { def: def || null, mods: {}, cartas: [], botin: { monedas: 0, materiales: {}, fichas: 0, xp: 0 }, obj: null, faro: [], lenta: 0 }; }
   // mapa nuevo en cada piso: laberinto con rodeos y salas, base en el centro
   function generarPiso(n, rnd) {
     const TT = TW(), W = TT.tamano.ancho, H = TT.tamano.alto, P = TT.pisos[n - 1], g = Array.from({ length: H }, () => Array(W).fill('#'));
@@ -819,6 +847,8 @@
     cortina = { t: 0, nombre: (P.jefe ? TW().jefes[P.jefe].nombre : 'Piso ' + ronda + ' / ' + TW().pisos.length), preparada: true };
     decir(txt2, 5.5);
     if (P.jefe) setTimeout(() => { if (torre && fase === 'jugando') decir(TW().jefes[P.jefe].frase, 5); }, 5600);
+    else if (P.frase) setTimeout(() => { if (torre && fase === 'jugando') decir(P.frase, 5); }, 5600);
+    if (torre.def) cortina.nombre = (P.jefe ? TW().jefes[P.jefe].nombre : TW().nombre + ' · ' + ronda + '/' + TW().pisos.length);
   }
   function objetivoTorre() {
     const o = torre?.obj; if (!o) return false;
@@ -875,16 +905,18 @@
       J.tHab -= dt;
       if (J.tHab <= 0) {
         J.tHab = J.jefe.cada;
-        if (J.jefe.habilidad === 'embestida' && J.estado === 'persigue') { J.embiste = .9; temblor = .35; pitido(70, .4, 'square', 1.2, 30); decir('¡Kuroni embiste!', 1.2); }
-        else if (J.jefe.habilidad === 'mirada') { J.aviso = 1.3; pitido(880, .6, 'sine', .6, 1760); decir('¡El Ojo se abre! Escóndete', 1.3); }
-        else if (J.jefe.habilidad === 'luna' && J.estado !== 'patrulla') parpadeo(J, 3, 5);
+        // v0.65: «tormenta» (jefe final) usa las tres habilidades por turnos
+        const hab = J.jefe.habilidad === 'tormenta' ? ['embestida', 'mirada', 'luna'][(J.ciclo = ((J.ciclo || 0) + 1) % 3)] : J.jefe.habilidad, quien = J.jefe.nombre.split(/[ ,]/)[0];
+        if (hab === 'embestida' && J.estado === 'persigue') { J.embiste = .9; temblor = .35; pitido(70, .4, 'square', 1.2, 30); decir('¡' + quien + ' embiste!', 1.2); }
+        else if (hab === 'mirada') { J.aviso = 1.3; pitido(880, .6, 'sine', .6, 1760); decir('¡El Ojo se abre! Escóndete', 1.3); }
+        else if (hab === 'luna' && J.estado !== 'patrulla') parpadeo(J, 3, 5);
         else J.tHab = 1.5;
       }
-      if (J.jefe.habilidad === 'luna' && !torre.mitad && tiempo < TW().pisos[ronda - 1].tiempo / 2) {   // a mitad del piso llama a dos crías
+      if ((J.jefe.habilidad === 'luna' || J.jefe.habilidad === 'tormenta') && !torre.mitad && tiempo < TW().pisos[ronda - 1].tiempo / 2) {   // a mitad del piso llama a dos crías
         torre.mitad = true; const tc = Object.keys(CONFIG.espectros);
         for (let k = 0; k < 2; k++) espectros.push({ tipo: 'cabeza', n: espectros.length, x: J.x, y: J.y, dir: PI / 2, objDir: PI / 2, estado: 'busca', ruta: [], vista: null, tMem: 0, tEspera: 2, tRecalc: 0, tGota: 0, anim: Math.random() * 9, tBlink: 6 + k * 2 });
         L.espIni.push([floor(J.x / T), floor(J.y / T), tc.indexOf('cabeza') + 1], [floor(J.x / T), floor(J.y / T), tc.indexOf('cabeza') + 1]);
-        decir('¡Akakubi llama a sus crías!', 2.2); temblor = .3;
+        decir('¡' + J.jefe.nombre.split(/[ ,]/)[0] + ' llama a sus crías!', 2.2); temblor = .3;
       }
     }
   }
@@ -899,7 +931,7 @@
       const fich = TW().pisos[n - 1].jefe ? B.fichasEnJefe : 0; torre.botin.fichas += fich;
       torre.resultado = { ok, n, mon, extraF, fantasma, mat, fich };
       contar('plantas'); if (TW().pisos[n - 1].jefe) contar('jefes');
-      const pool = TW().cartas.filter(c => !torre.cartas.includes(c.id) || c.mod.botin || c.mod.tiempo);
+      const pool = cartasT().filter(c => !torre.cartas.includes(c.id) || c.mod.botin || c.mod.tiempo);
       torre.ofertas = []; while (torre.ofertas.length < 3 && pool.length) torre.ofertas.push(pool.splice(floor(Math.random() * pool.length), 1)[0]);
       torre.elegida = n >= TW().pisos.length;
       [784, 988, 1175].forEach((f, i) => setTimeout(() => pitido(f, .16, 'triangle', .5), 300 + i * 110));
@@ -914,8 +946,11 @@
     const p = { monedas: Math.round(b.monedas * factor), fichas: factor >= 1 ? b.fichas : 0, xp: Math.round(b.xp * factor) };
     L2.push(...darPremio(p));
     for (const k in b.materiales) { const c = Math.round(b.materiales[k] * factor); if (c) { prog.materiales[k] = (prog.materiales[k] || 0) + c; L2.push((EQUIPO.materiales[k] || k) + ' × ' + c); } }
-    if (torre.resultado?.ok && torre.resultado.n >= TW().pisos.length) { L2.push(...darPremio({ objeto: ['Legendario'], siRepetido: 300 })); contar('torres'); }
+    const finalHecho = torre.def && torre.resultado?.ok && torre.resultado.n >= TW().pisos.length;
+    if (finalHecho) { const primera = !prog.final; prog.final = (prog.final || 0) + 1; if (primera) L2.push(...darPremio(Object.assign({ siRepetido: 300 }, FN().premio))); }
+    else if (torre.resultado?.ok && torre.resultado.n >= TW().pisos.length) { L2.push(...darPremio({ objeto: ['Legendario'], siRepetido: 300 })); contar('torres'); }
     guardarProg(); torre = null; irMenu(); decir('Botín: ' + (L2.join(' · ') || 'nada'), 4.5); SON.entregar();
+    if (finalHecho) setTimeout(abrirEpilogo, 600);
   }
   function htmlTorre() {
     const r = torre.resultado, b = torre.botin, N = TW().pisos.length;
@@ -927,6 +962,7 @@
     }
     const lineas = [['Piso superado', '◈ +' + r.mon], r.fantasma && ['¡Fantasma! Nadie te vio', '◈ +' + r.extraF], r.mat && ['Material', EQUIPO.materiales[r.mat]], r.fich && ['Jefe derrotado', '✦ +' + r.fich]].filter(Boolean)
       .map(([a, v], i) => '<li class="rq-pop" style="animation-delay:' + (i * .25) + 's"><span>' + esc(a) + '</span><b>' + esc(String(v)) + '</b></li>').join('');
+    if (r.n >= N && torre.def) return '<div class="rq-hanko">終</div><h2>El agua vuelve a su cauce</h2><ul class="rq-premios">' + lineas + '</ul>' + bolsa + (prog.final ? '' : '<p>Premio de la historia: ◈ ' + FN().premio.monedas + ' · ✦ ' + FN().premio.fichas + ' · objeto Legendario.</p>') + '<button class="rq-b" data-a="cobrarTorre" data-id="1">Ver el final</button>';
     if (r.n >= N) return '<div class="rq-hanko">覇</div><h2>¡Has conquistado la Torre!</h2><ul class="rq-premios">' + lineas + '</ul>' + bolsa + '<p>Premio final: un objeto Legendario.</p><button class="rq-b" data-a="cobrarTorre" data-id="1">Cobrar todo</button>';
     const sig = TW().pisos[r.n], cartas = torre.elegida ? '<p>Carta elegida: <b>' + esc(torre.ultimaCarta || '') + '</b></p>' :
       '<h3>Elige una carta</h3><div class="rq-cartas">' + torre.ofertas.map(c => '<button class="rq-carta" data-a="cartaTorre" data-id="' + c.id + '"><b>' + esc(c.nombre) + '</b><small>' + esc(c.desc) + '</small></button>').join('') + '</div>';
@@ -935,10 +971,10 @@
       '<p><small>Siguiente: ' + esc(pistas) + '</small></p>' +
       '<button class="rq-b" data-a="seguirTorre"' + (torre.elegida ? '' : ' disabled') + '>Arriesgar · subir al piso ' + (r.n + 1) + '</button>' +
       '<button class="rq-b sec" data-a="cobrarTorre" data-id="1">Retirarse con el botín</button>' +
-      (torre.cartas.length ? '<p><small>Tus cartas: ' + torre.cartas.map(id => esc(TW().cartas.find(c => c.id === id)?.nombre || id)).join(' · ') + '</small></p>' : '');
+      (torre.cartas.length ? '<p><small>Tus cartas: ' + torre.cartas.map(id => esc(cartasT().find(c => c.id === id)?.nombre || id)).join(' · ') + '</small></p>' : '');
   }
   function elegirCarta(id) {
-    const c = TW().cartas.find(x => x.id === id); if (!c || torre.elegida) return;
+    const c = cartasT().find(x => x.id === id); if (!c || torre.elegida) return;
     for (const k in c.mod) torre.mods[k] = (torre.mods[k] || 0) + c.mod[k];
     torre.cartas.push(c.id); torre.ultimaCarta = c.nombre; torre.elegida = true; pitido(990, .12, 'triangle', .5); pintarUI();
   }
@@ -1414,7 +1450,7 @@
     const lista=misiones().filter(([id,p])=>misionDisponible(id,p));
     const entrada=lista.find(([id])=>id===prog.guia) || lista.find(([id])=>prog.m[id]==='activa'&&regionMision(id)===zonaId) ||
       lista.find(([id])=>regionMision(id)===zonaId) || lista.find(([id])=>prog.m[id]==='activa') || lista[0];
-    if(!entrada)return null;
+    if(!entrada) return (prog.huevo && !prog.final && FN()) ? {id:'final',titulo:FN().nombre,x:floor(h.x/T),y:floor(h.y/T),tipo:'final',texto:'Pulsa DOJO: te espera el capítulo final'} : null;
     const [id,p]=entrada, region=regionMision(id), m=p.mision;
     const paso=region!==zonaId ? pasoHacia(region) : null;
     const titulo=m.titulo || m.nombreObjeto;
@@ -2846,17 +2882,28 @@
     g.restore();
   }
 
+  // v0.65: cartel de papel washi centrado ENCIMA de la barra de experiencia (antes se pisaban).
+  // Si el texto es largo pasa a dos líneas en vez de encogerse. Altura en config.js > pantalla.alturaPista
+  function pistaWashi(texto,marcador) {
+    const tactil=cont.classList.contains('tactil'), disponible=IW-(tactil?120:14), mg=marcador?26:16;   // en móvil deja sitio al botón SPRINT
+    g.font='700 10px ui-monospace, Menlo, Consolas, monospace';
+    const mide=t=>g.measureText(t).width;
+    let lineas=[texto], tam=Math.min(8.3,(disponible-mg)*10/mide(texto));
+    if(tam<6.6){ let corte=texto.lastIndexOf(' ',texto.length/2+4); if(corte<4)corte=texto.indexOf(' ',texto.length/2); if(corte>0){ lineas=[texto.slice(0,corte),texto.slice(corte+1)]; tam=Math.min(8.3,(disponible-mg)*10/Math.max(...lineas.map(mide))); } }
+    const ancho=Math.max(...lineas.map(mide))*tam/10, alto=lineas.length>1?24:15;
+    const w=Math.min(disponible,ancho+mg), x=(IW-w)/2, y0=AH-(CONFIG.pantalla?.alturaPista??36)-(alto-15);
+    g.fillStyle='#2a1a0e99';g.beginPath();g.roundRect(x+1,y0+1.5,w,alto,7.5);g.fill();
+    g.fillStyle='#f3e4c2f0';g.beginPath();g.roundRect(x,y0,w,alto,7.5);g.fill();
+    g.strokeStyle='#8a6238';g.lineWidth=.8;g.beginPath();g.roundRect(x+.4,y0+.4,w-.8,alto-.8,7.1);g.stroke();
+    if(marcador)marcadorGuia(x+8,y0+alto/2,3.5);
+    lineas.forEach((l,k)=>escribe(l,marcador?x+16:x+w/2,y0+10+k*9,tam,'#3a2414',marcador?'left':'center'));
+  }
   function dibujaHUD() {
     if (fase === 'menu') return;
     if(fase==='aldea') {
       if((aviso.t>0||guiaActual)&&!mapaExplorador) {   // con el mapa abierto la pista se oculta para no taparse
         const texto=aviso.t>0?aviso.txt:guiaActual.texto;
-        const tactil=cont.classList.contains('tactil');
-        const disponible=IW-(tactil?60:14);
-        const tam=Math.min(8.3,(disponible-23)/(texto.length*.57));
-        const w=Math.min(disponible,Math.max(80,texto.length*tam*.61+23)), x=tactil?5:(IW-w)/2;
-        R(x,AH-30,w,15,'#221b23dc');linea([x+3,AH-30,x+w-3,AH-30],'#aa825b',.5);
-        marcadorGuia(x+8,AH-22.5,3.5);escribe(texto,x+16,AH-20,tam,'#ffe5ae');
+        pistaWashi(texto,true);
       }
       return;
     }
@@ -2865,11 +2912,7 @@
     R(IW-anchoHud-3,2,anchoHud,14,'#1d1420dc');
     escribe(crono,IW-anchoHud+1,11.6,7.7,tiempo<=10?'#ff777c':'#e6cbaa');
     escribe(objetivo,IW-6,11.6,7,'#dfc3a0','right');
-    if(aviso.t>0) {
-      const tam=Math.min(8.1,(IW-22)/(aviso.txt.length*.59));
-      const w=Math.min(IW-12,aviso.txt.length*tam*.65+12);
-      R((IW-w)/2,AH-20,w,13,'#211620db');escribe(aviso.txt,IW/2,AH-11,tam,'#f0d8ac','center');
-    }
+    if(aviso.t>0) pistaWashi(aviso.txt,false);
   }
 
   // el mapa: enseña espectros Y la ruta que van a seguir
@@ -3485,7 +3528,7 @@
       g.globalAlpha = asentado;
       g.font = 'bold ' + esc*.105 + 'px Georgia, serif';
       g.textAlign = 'center'; g.fillStyle = '#ebffc5';
-      g.shadowColor = '#05120a'; g.shadowBlur = 8; g.fillText('Dofus verde',x,alto*.759);
+      g.shadowColor = '#05120a'; g.shadowBlur = 8; g.fillText('Huevo de jade',x,alto*.759);
       g.shadowBlur = 0;
       escribe('Bloquea cada cuarto ataque',x,alto*.823,esc*.041,'#cceca1','center',true);
     }
@@ -3583,7 +3626,7 @@
       if (R.calidadAutomatica !== false && ms > ignorarHasta && carga > (R.umbralMs || 14) && calidadDinamica > minimo) {
         if (++tandasLentas >= 2) { calidadDinamica = Math.max(minimo, calidadDinamica - .25); tandasLentas = 0; medir(); }
       } else tandasLentas = 0;
-      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.64 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
+      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.65 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
       perfInicio = ms; perfFrames = 0; perfLentos = 0; perfUpdate = perfRender = perfAudio = perfMuestras = 0;
     }
   }
@@ -3711,6 +3754,21 @@
   @keyframes ecoFragua{0%{filter:brightness(1.65);transform:scale(.98)}100%{filter:brightness(1);transform:scale(1)}}
   @media(prefers-reduced-motion:reduce){.rq-ritual{animation:none}}
   .rq-paisaje{display:block;width:100%;aspect-ratio:1.75;object-fit:cover;border-radius:5px;margin-bottom:10px}
+  .rq-epilogo{position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:radial-gradient(#1d2a2e,#07090c);cursor:pointer;padding:18px;box-sizing:border-box}
+  .rq-ep-lamina{max-width:440px;text-align:center;color:#f6e7c4;font-family:Georgia,serif;animation:rqEp .9s ease-out}
+  .rq-ep-lamina img{width:min(42vw,170px);aspect-ratio:1;object-fit:cover;border-radius:50%;border:3px solid #c9a15c;box-shadow:0 0 30px #8ae8ff44}
+  .rq-ep-lamina h2{font-size:clamp(20px,5vw,30px);color:#f6c95c;margin:12px 0 6px;letter-spacing:.06em}
+  .rq-ep-lamina p{font-size:clamp(14px,3.6vw,18px);line-height:1.5;font-style:italic}
+  .rq-ep-lamina small{opacity:.55;font-size:11px}
+  .rq-ep-sello{display:inline-grid;place-items:center;width:90px;height:90px;border-radius:14px;background:#a3241c;color:#fff3e0;font-size:52px;box-shadow:0 0 24px #a3241c88}
+  .rq-ep-creditos{width:100%;height:100%;overflow:hidden;position:relative;-webkit-mask:linear-gradient(transparent,#000 15%,#000 85%,transparent)}
+  .rq-ep-rollo{position:absolute;left:0;right:0;top:100%;text-align:center;color:#f6e7c4;font:italic clamp(14px,3.8vw,19px) Georgia,serif;animation:rqRollo 16s linear forwards}
+  .rq-ep-rollo p:first-child{font:bold clamp(26px,7vw,40px) Georgia,serif;color:#f6c95c;letter-spacing:.2em}
+  @keyframes rqEp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes rqRollo{to{top:-110%}}
+  .rq-b.rq-final{background:linear-gradient(#2a5d6e,#173847)!important;color:#e9fbff!important;border-color:#8ae8ff!important;box-shadow:0 0 12px #8ae8ff55}
+  .rq-bloq{opacity:.75;font-size:.9em}
+  .rq-leyenda{display:block;margin:8px 0;font-size:.92em}
   .rq-guia{margin:10px 0;padding:10px;background:#30291e;border:1px solid #9c7c4d;border-radius:7px;color:#ffe3a1;text-align:left}
   .rq-lista .rq-c{display:block;margin-top:5px}
   .rq-lista .rq-objetivo{border-left:2px solid #e8ba70;padding-left:8px}
@@ -4022,7 +4080,9 @@
       const ops = Object.keys(CONFIG.dificultades).map(k => `<option value="${esc(k)}"${k === dif ? ' selected' : ''}>${esc((X.nombresDificultad || {})[k] || k)}</option>`).join('');
       const maps = NIVELES.map((n, i) => `<option value="${i}"${i === mapaIni ? ' selected' : ''}>${esc(n.nombre)}</option>`).join('');
       html = `<h1>${esc(X.titulo)}</h1><p>${esc(X.hola || 'Hola')}, <b>${esc(jugador)}</b>. ${esc(X.subtitulo)}</p>
-        <button class="rq-b" data-a="expedicion">Torre del Dojo · 15 pisos y 3 jefes</button><button class="rq-b sec" data-a="equipo">Inventario y características</button>
+        <button class="rq-b" data-a="expedicion">Torre del Dojo · 15 pisos y 3 jefes</button>
+        ${FN() ? (prog.huevo ? `<button class="rq-b rq-final" data-a="capFinal">${esc(FN().boton)}${prog.final ? ' ✓' : ''}</button>` : `<p class="rq-bloq">🔒 ${esc(FN().bloqueado)}</p>`) : ''}
+        ${FN() && prog.final ? `<label class="rq-leyenda"><input type="checkbox" data-a="leyenda" ${prog.leyendaOn ? 'checked' : ''}> ${esc(FN().leyenda.nombre)} · <small>${esc(FN().leyenda.desc)}</small></label><button class="rq-b sec" data-a="verFinal">Volver a ver el final</button>` : ''}<button class="rq-b sec" data-a="equipo">Inventario y características</button>
         <h3>Práctica</h3>
         <label>${esc(X.dificultad)}<select data-s="dif">${ops}</select></label>
         <label>${esc(X.mapa)}<select data-s="mapa">${maps}</select></label>
@@ -4094,7 +4154,7 @@
     const rutas = pasosMundo().map(p => '<li>' + esc(nombreZona(p[2])) + (abierto(p) ? ' · ' + (p[1] < L.rows/3 ? 'norte' : p[1] > L.rows*2/3 ? 'sur' : p[0] < L.cols/2 ? 'oeste' : 'este') : ' · cerrado') + '</li>').join('');
     const nLog = logrosPorCobrar();
     return '<h2>Diario del viajero</h2><p>' + esc(rango().nombre) + ' · nivel ' + nivelDe(prog.xp) + ' · ' + prog.xp + ' XP · ◈ ' + prog.puntos + ' monedas</p>' + (EC() ? '<button class="rq-b" data-a="verLogros">🏮 Recompensas' + (nLog ? ' · ' + nLog + ' por cobrar' : '') + '</button>' : '') + cabGuia + '<h3>Misiones</h3><ul class="rq-lista">' + tareas + '</ul>' + aliados +
-      (prog.huevo ? '<p>Dofus verde · ' + prog.cargaJade + '/4 hacia el próximo bloqueo</p><button class="rq-b sec" data-a="verJade">Volver a ver la entrega</button>' : '') +
+      (prog.huevo ? '<p>Huevo de jade · ' + prog.cargaJade + '/4 hacia el próximo bloqueo</p><button class="rq-b sec" data-a="verJade">Volver a ver la entrega</button>' : '') +
       '<h3>Salidas desde ' + esc(L.nombre) + '</h3><ul class="rq-lista">' + rutas + '</ul>' + cerrar;
   }
   function irMenu() { expedicion=false; torre=null; ritual=null; panelMundo = ''; zonaId = 'aldea'; dlg = null; pintarDlg(); tienda = false; fase = 'menu'; cargarNivel(mapaIni); pintarUI(); }
@@ -4164,7 +4224,7 @@
     ponerIconos();
     btnArte = document.createElement('button'); btnArte.className = 'rq-m'; btnArte.dataset.a = 'arte'; btnArte.textContent = '❈'; btnArte.setAttribute('aria-label','Contemplar la región'); mandos.appendChild(btnArte);
     escenaJade = document.createElement('div'); escenaJade.className = 'rq-escena-jade'; escenaJade.hidden = true;
-    escenaJade.setAttribute('role','dialog'); escenaJade.setAttribute('aria-modal','true'); escenaJade.setAttribute('aria-label','Dofus verde obtenido');
+    escenaJade.setAttribute('role','dialog'); escenaJade.setAttribute('aria-modal','true'); escenaJade.setAttribute('aria-label','Huevo de jade obtenido');
     escenaJade.innerHTML = '<button class="rq-m ancho" data-a="cerrarJade">Saltar</button>';
     cont.append(joyBase, joyPomo, mandos, btnSprint, btnLanzar, btnCambiar, btnCorte, btnAccion, dlgEl, ui, escenaJade);
     etiquetaAccion = null; leerProg(); regaloPruebas(); setTimeout(() => { if (jugador) iniciarRed(); }, 1200);
@@ -4193,6 +4253,9 @@
       else if (a === 'iniciarRitual') iniciarRitual(b.dataset.id, b.dataset.juramento);
       else if (a === 'pasoRitual') pasoRitual();
       else if (a === 'expedicion' && fase === 'menu') empezar({expedicion:true,torre:true,bando:'heroe',difficulty:'normal'});
+      else if (a === 'capFinal' && fase === 'menu' && prog.huevo) empezar({expedicion:true,torre:true,final:true,bando:'heroe',difficulty:'normal'});
+      else if (a === 'leyenda') { prog.leyendaOn = !prog.leyendaOn; guardarProg(); pintarUI(); }
+      else if (a === 'verFinal') abrirEpilogo();
       else if (a === 'reintentar' && fase === 'finRonda' && expedicion && !recompensaPiso) iniciarRonda();
       else if (a === 'atlas' && fase === 'aldea' && !dlg) { tienda = false; panelMundo = panelMundo === 'atlas' ? '' : 'atlas'; pintarUI(); }
       else if (a === 'partirBosque' && fase === 'aldea' && zonaId === 'aldea' && panelMundo === 'atlas') irAldea('bosque');
@@ -4353,6 +4416,7 @@
     _portales: () => portales.map(p => [p.tx, p.ty]),
     _agua: () => h && [h.enAgua, +h.energia.toFixed(2), floor(h.x / T), floor(h.y / T)],
     _ganarPiso: () => { if (torre) { gemasPiso = 99; torre.obj.hechos = 99; } },
+    _terminarPiso: () => { if (fase === 'jugando') terminarRonda(); },   // solo para pruebas
     _torre: () => torre && { piso: ronda, obj: torre.obj, mods: torre.mods, botin: torre.botin, jefe: torre.jefe && torre.jefe.jefe.nombre, espectros: espectros.length, faro: torre.faro.length, faroPos: torre.faro.map(f => [f.tx, f.ty, f.apagado]) },
     _panel: p => { panelMundo = p; pintarUI(); },
     _cofres: () => cofres.map(c => [c.tx, c.ty, c.abierto]),

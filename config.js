@@ -12,6 +12,7 @@ const CONFIG = {
     alto: 192,
     tile: 24,          // tamaño de cada casilla en unidades (más grande = cámara más cerca)
     alturaSeto: 0.46,   // falso 3D: altura de los setos en casillas (0 = plano)
+    alturaPista: 36,   // v0.65: a qué altura sale la pista de «qué hacer» (desde abajo de la pantalla)
     calidadMax: 3      // tope de nitidez (baja a 2 si un móvil viejo va lento)
   },
 
@@ -183,7 +184,7 @@ const CONFIG = {
   // Monedas: el juego cuenta en cobre. plata = cuántos cobres vale una de plata; oro = cuántos cobres vale una de oro
   // Imágenes opcionales: assets/mundo/moneda-cobre.webp, moneda-plata.webp, moneda-oro.webp
   monedas: { plata: 20, oro: 40 },
-  // Experiencia estilo Dofus (más suave): XP para el nivel n = base·(n-1)² + lineal·(n-1)
+  // Experiencia por niveles (curva suave): XP para el nivel n = base·(n-1)² + lineal·(n-1)
   experiencia: { base: 40, lineal: 30, premioMonedas: 40, fichaCada: 2,
     frases: ['El cedro te reconoce.', 'Los espectros empiezan a hablar de ti.', 'Momo te guarda el mejor melocotón.', 'El kappa finge que no te ha visto subir de nivel.', 'Tu sombrero de paja ya tiene historia.'] },
 

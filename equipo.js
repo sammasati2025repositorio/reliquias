@@ -18,7 +18,7 @@ const EQUIPO = (() => {
   item('lunario','Anillo de la luna menguante','anillo','☾','Épico',{velocidad:4,sabiduria:8},'Solo refleja la luz cuando la luna pierde su última punta.');
   item('sello','Sello del Primer Guardián','reliquia','✧','Épico',{aguante:.6,defensa:8},'Una firma en jade oscuro, anterior al Dojo.');
   item('kanabo','Kanabō de la Campana Hueca','arma','⚒','Épico',{ataque:22},'Deja un eco bajo cuando se acerca a una llama.');
-  item('dofus','Dofus verde','reliquia','✺','Legendario',{},'Desbloqueado por la campaña. Su protección innata bloquea cada cuarto ataque.');
+  item('dofus','Huevo de jade','reliquia','✺','Legendario',{},'Desbloqueado por la campaña. Su protección innata bloquea cada cuarto ataque.');
   item('shide','Capa del Peregrino','capa','♧','Épico',{defensa:6},'Dos piezas del Peregrino dan +0,25 s de aguante. Tres añaden +4 % de hallazgo.');
   item('kintsugi','Anillo del Peregrino','anillo','◌','Épico',{fortuna:6},'Dos piezas del Peregrino dan +0,25 s de aguante. Tres añaden +4 % de hallazgo.');
   item('mascara','Máscara del Peregrino','cabeza','◭','Legendario',{sigilo:1},'Dos piezas del Peregrino dan +0,25 s de aguante. Tres añaden +4 % de hallazgo.');
