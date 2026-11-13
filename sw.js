@@ -1,7 +1,7 @@
 // SW.JS — guarda TODO el juego en el móvil la primera vez, para jugar SIN internet.
 // Solo el modo online (amigos, dojo a dos) necesita conexión.
 // Al cambiar de versión, sube el número de CACHE para que los móviles bajen lo nuevo.
-const CACHE = 'reliquias-v063';
+const CACHE = 'reliquias-v064';
 const ARCHIVOS = [
 "./",
 "aldea.js",

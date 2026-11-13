@@ -182,7 +182,7 @@ const ARTE_ISO = (() => {
   // v0.20: el suelo (hierba, losas, orillas) se proyecta en isométrico UNA vez y luego solo se copia.
   let sueloProy=null;
   function sueloProyectado(c,L,T,region,images,data,sc){
-    const res=Math.min(escalaCache,1.75),key=data.ancho+':'+region;
+    const res=Math.min(escalaCache,1.5),key=data.ancho+':'+region;
     if(sueloProy&&sueloProy.data===data&&sueloProy.key===key)return sueloProy;   // no se rehace al cambiar la calidad: se reescala
     const m=L.exterior?T*5:T,esq=[proyectar(0,0),proyectar(data.w,0),proyectar(data.w,data.h),proyectar(0,data.h)];
     const x0=Math.min(...esq.map(e=>e[0]))-m,x1=Math.max(...esq.map(e=>e[0]))+m,y0=Math.min(...esq.map(e=>e[1]))-m,y1=Math.max(...esq.map(e=>e[1]))+m;
@@ -203,7 +203,11 @@ const ARTE_ISO = (() => {
     }
     // la textura plana ya no hace falta: se libera para ahorrar memoria (se rehace si cambia el tamaño)
     if(images['atlas-suelos']?.naturalWidth||!L.exterior){data.canvas.width=data.canvas.height=1;data.libre=true;}
-    sueloProy={data,key,cv,x0,y0,res};return sueloProy;
+    // v0.64: el suelo se trocea en baldosas de 512 px y solo se pintan las que se ven
+    // (un lienzo gigante de 8 megapíxeles ahogaba la tarjeta gráfica del móvil).
+    const TROZO=512,trozos=[];
+    for(let ty=0;ty<cv.height;ty+=TROZO)for(let tx=0;tx<cv.width;tx+=TROZO){const tw=Math.min(TROZO,cv.width-tx),th=Math.min(TROZO,cv.height-ty),t2=document.createElement('canvas');t2.width=tw;t2.height=th;t2.getContext('2d').drawImage(cv,tx,ty,tw,th,0,0,tw,th);trozos.push({cv:t2,x:tx,y:ty,w:tw,h:th});}
+    sueloProy={data,key,cv:{width:cv.width,height:cv.height},trozos,x0,y0,res};cv.width=cv.height=1;return sueloProy;
   }
   const capas={};
   function capa(clave,w,h,pintar){const res=escalaCache,k=clave+':'+w+':'+h+':'+res;let cv=capas[k];if(!cv){cv=document.createElement('canvas');cv.width=Math.ceil(w*res);cv.height=Math.ceil(h*res);const cc=cv.getContext('2d');cc.scale(res,res);pintar(cc);capas[k]=cv;}return cv;}
@@ -221,7 +225,7 @@ const ARTE_ISO = (() => {
     const ground=f=>{c.save();c.transform(AX,AY,-AX,AY,-cx,-cy);f();c.restore();};
     escalaCache=Math.min(2.25,Math.max(1,c.getTransform().a||1));
     {const sp=sueloProyectado(c,L,T,region,images,data,s),ok=images['atlas-suelos']?.naturalWidth||!L.exterior;
-     if(ok)c.drawImage(sp.cv,sp.x0-cx,sp.y0-cy,sp.cv.width/sp.res,sp.cv.height/sp.res);
+     if(ok){const k=1/sp.res,ox=sp.x0-cx,oy=sp.y0-cy;for(const tr of sp.trozos){const x=ox+tr.x*k,y=oy+tr.y*k,ww=tr.w*k,hh=tr.h*k;if(x>w||y>height||x+ww<0||y+hh<0)continue;c.drawImage(tr.cv,x,y,ww+.5,hh+.5);}}
      else ground(()=>c.drawImage(data.canvas,0,0,data.w,data.h));}
     const horneado=!!(sueloProy&&sueloProy.data===data&&L.exterior);
     // Bordes elevados: lo oscuro es un canto de tierra, nunca un camino invisible.
@@ -230,7 +234,18 @@ const ARTE_ISO = (() => {
       poly(c,[[...dd],[...cc],[cc[0],cc[1]+8],[dd[0],dd[1]+8]],'#6c7050');poly(c,[b,cc,[cc[0],cc[1]+8],[b[0],b[1]+8]],'#4e5741');
     }
     // Agua: reflejos y caústicas que se quedan siempre dentro de las casillas de agua.
-    ground(()=>{c.save();caminoAgua(c,data.waterMesh);c.clip(rutaAgua(data.waterMesh));for(const[x,y]of data.waters){const pp=Q(x,y);if(!visible(...pp))continue;for(let k=0;k<2;k++){const yy=y*T+((t*3+k*12+x*2)%T);line(c,[[x*T+3,yy],[x*T+9,yy-.3],[x*T+17,yy]],'#ceffed20',.4)}if((x*7+y*9)%17===0){const xx=(x+.5)*T+Math.sin(t*.6+x)*T*.25,yy=(y+.5)*T+Math.cos(t*.4+y)*T*.2;ellipse(c,xx,yy,2.1,.65,'#e5a66c')}}c.restore();});
+    // v0.64: reflejos del agua SIN recorte (el recorte con curvas hundía los FPS en el manantial) y en UN solo trazo.
+    // Solo en casillas de agua rodeadas de agua, así nunca se salen a la orilla.
+    if(data.waters.length&&(window.CONFIG?.rendimiento?.reflejosAgua!==false)){
+      if(!data.aguaDentro){const k=new Set(data.waters.map(([x,y])=>x+','+y));data.aguaDentro=data.waters.filter(([x,y])=>k.has((x+1)+','+y)&&k.has((x-1)+','+y)&&k.has(x+','+(y+1))&&k.has(x+','+(y-1)));}
+      ground(()=>{c.beginPath();const brillos=[];
+        for(const[x,y]of data.aguaDentro){const pp=Q(x,y);if(!visible(...pp))continue;
+          for(let k=0;k<2;k++){const yy=y*T+((t*3+k*12+x*2)%T);c.moveTo(x*T+3,yy);c.lineTo(x*T+9,yy-.3);c.lineTo(x*T+17,yy);}
+          if((x*7+y*9)%17===0)brillos.push(x,y);}
+        c.strokeStyle='#ceffed20';c.lineWidth=.4;c.stroke();
+        c.beginPath();for(let i=0;i<brillos.length;i+=2){const x=brillos[i],y=brillos[i+1],xx=(x+.5)*T+Math.sin(t*.6+x)*T*.25,yy=(y+.5)*T+Math.cos(t*.4+y)*T*.2;c.moveTo(xx+2.1,yy);c.ellipse(xx,yy,2.1,.65,0,0,TAU);}
+        c.fillStyle='#e5a66c';c.fill();});
+    }
 
     ground(()=>{d.guia();d.sangre();d.conos();});
     const objs=[],push=(x,y,fn)=>objs.push({depth:x+y,x,y,fn});

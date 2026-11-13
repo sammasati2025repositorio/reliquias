@@ -3583,7 +3583,7 @@
       if (R.calidadAutomatica !== false && ms > ignorarHasta && carga > (R.umbralMs || 14) && calidadDinamica > minimo) {
         if (++tandasLentas >= 2) { calidadDinamica = Math.max(minimo, calidadDinamica - .25); tandasLentas = 0; medir(); }
       } else tandasLentas = 0;
-      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.61 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
+      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.64 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
       perfInicio = ms; perfFrames = 0; perfLentos = 0; perfUpdate = perfRender = perfAudio = perfMuestras = 0;
     }
   }
