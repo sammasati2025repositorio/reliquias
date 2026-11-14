@@ -63,6 +63,7 @@
       for (const [k,v] of Object.entries(objeto.atributos)) total[k]=(total[k]||0)+v;
       const forja = prog.forjas[id], juramento = EQUIPO.juramentos[forja?.juramento];
       if (juramento) total[juramento.atributo]=(total[juramento.atributo]||0)+juramento.valor*forja.grado;
+      if (objeto.tipo==='arma' && forja?.grado) for (let k=0;k<forja.grado;k++) total.ataque=(total.ataque||0)+(EQUIPO.grados[k].ataque||0);   // v0.69: cada grado de la fragua sube el Ataque
     }
     for (const [id,favor] of Object.entries(MUNDO.favores)) {
       if (prog.favores[id] && favor.atributo) total[favor.atributo]=(total[favor.atributo]||0)+favor.valor;
@@ -353,7 +354,7 @@
     const n = aldea ? (zona() || ALDEA) : genera ? i : NIVELES[nivelActual], filas = n.mapa;
     T = CONFIG.pantalla.tile;
     L = { nombre: n.nombre, rows: filas.length, cols: Math.max(...filas.map(f => f.length)), c: [], inicio: null, espIni: [], base: [], exterior: !!aldea, npcs: [], objetos: [], puertas: [], arboles: [] };
-    armaCd = 0; efectos = []; proyectiles = []; lanzadas = [];
+    for (const k in cds) cds[k] = 0; efectos = []; proyectiles = []; lanzadas = [];
     gemas = []; turbos = []; manchas = []; gotas = []; portales = []; tp = null;
     for (let y = 0; y < L.rows; y++) {
       L.c.push([]);
@@ -563,27 +564,7 @@
       }
     }
     const destino = celda(tx,ty);
-    if (h.carga.length && (destino===4 || (destino===3 && !esVillano()))) {
-      if (pareja && !pareja.anfitrion) ON()?.enviar('entregar', { i: h.carga.map(g2 => gemas.indexOf(g2)) }, pareja.id);
-      let total = 0, cantidad = h.carga.length;
-      for (const gema of h.carga) {
-        racha++; gemasPiso++; if (!esVillano()) contar('reliquias'); if (torre) torreEntrega(gema);
-        const pts = (CONFIG.gemas.puntos[gema.valor-1] || gema.valor) + (racha-1)*(CONFIG.partida.bonoRacha || 0);
-        total += pts;
-        tiempo += CONFIG.partida.tiempoPorEntrega || 0;
-        entregadas.push(gema.valor);
-        gema.estado='espera'; gema.t=CONFIG.partida.reaparicionGema;
-      }
-      h.carga=[];
-      puntos+=total;
-      if (!esVillano()) {
-        prog.puntos+=Math.round(total*(CONFIG.partida.monedasPorPunto||1)*(1+atributo('fortuna')/100));
-        ganarXP(total*2); guardarProg();
-      }
-      SON.entregar();
-      if (cantidad>1) setTimeout(()=>pitido(1319,.15,'triangle'),220);
-      decir('+'+total+' puntos · '+cantidad+(cantidad===1?' gema':' gemas')+' · Racha ×'+racha,2.4);
-    }
+    if (h.carga.length && (destino===4 || (destino===3 && !esVillano()))) entregarGemas(h.carga);
     // teletransporte: los portales van por parejas (1º con 2º, 3º con 4º...)
     for (let i = 0; i < portales.length; i++) {
       const a = portales[i], b = portales[i ^ 1];
@@ -615,6 +596,28 @@
     pitido(pesada ? 260 : 520, .12, 'triangle', .5, pesada ? 160 : 900); ruido(.12, pesada ? 900 : 2600, .6, 1.2);
     decir(pesada ? '¡Ugh! Pesa lo suyo' : '¡Allá va!', 1.2);
   }
+  // v0.68: entrega de reliquias (llevadas en la mano o lanzadas a la base dorada)
+  function entregarGemas(lista) {
+      if (pareja && !pareja.anfitrion) ON()?.enviar('entregar', { i: lista.map(g2 => gemas.indexOf(g2)) }, pareja.id);
+      let total = 0, cantidad = lista.length;
+      for (const gema of lista) {
+        racha++; gemasPiso++; if (!esVillano()) contar('reliquias'); if (torre) torreEntrega(gema);
+        const pts = (CONFIG.gemas.puntos[gema.valor-1] || gema.valor) + (racha-1)*(CONFIG.partida.bonoRacha || 0);
+        total += pts;
+        tiempo += CONFIG.partida.tiempoPorEntrega || 0;
+        entregadas.push(gema.valor);
+        gema.estado='espera'; gema.t=CONFIG.partida.reaparicionGema;
+      }
+      if (lista === h.carga) h.carga=[];
+      puntos+=total;
+      if (!esVillano()) {
+        prog.puntos+=Math.round(total*(CONFIG.partida.monedasPorPunto||1)*(1+atributo('fortuna')/100));
+        ganarXP(total*2); guardarProg();
+      }
+      SON.entregar();
+      if (cantidad>1) setTimeout(()=>pitido(1319,.15,'triangle'),220);
+      decir('+'+total+' puntos · '+cantidad+(cantidad===1?' gema':' gemas')+' · Racha ×'+racha,2.4);
+      }
   // una reliquia entregada vuelve a salir en un sitio al azar del dojo (nunca en la base ni en zonas seguras)
   function reaparecerGema(gm) {
     const libres = [];
@@ -636,6 +639,7 @@
     for (const e of espectros) if (!(e.muerto > 0) && e.estado !== 'persigue' && hypot(e.x - q.x, e.y - q.y) < oido) { e.estado = 'busca'; e.ruta = []; irA(e, tx, ty); e.tEspera = 2; }
     if (final) {
       q.fin = true; const cz = celda(tx, ty);
+      if (cz === 4 && fase === 'jugando') { q.gema.estado = 'llevada'; entregarGemas([q.gema]); efectos.push({ tipo: 'puf', x: q.x, y: q.y, t: .5, dur: .5 }); return; }   // v0.68: lanzada a la base dorada = punto
       if (cz === 3 || cz === 4) { q.gema.estado = 'espera'; q.gema.t = 1.2; efectos.push({ tipo: 'puf', x: q.x, y: q.y, t: .5, dur: .5 }); decir('La zona sagrada la rechaza: rodará a otro sitio', 2); return; }
       q.gema.tx = tx; q.gema.ty = ty; q.gema.estado = 'suelo';
     }
@@ -748,6 +752,14 @@
     if (jade && prog.cargaJade === 0) {
       e.lento = HV.duracion || 2.2; h.inv = Math.max(h.inv, 1.2); e.estado = 'busca'; e.ruta = []; e.tEspera = 1; efectos.push({ tipo: 'jade', x: h.x, y: h.y, t: .75, dur: .75, r: 2 * T });
       [660, 880, 1320].forEach((f, i) => setTimeout(() => pitido(f, 0.18, 'sine', .7), i * 80)); decir('El Huevo de jade detiene el golpe', 2.2); return;
+    }
+    // v0.66: PARADA con el arma equipada: según su Ataque, a veces desvías el golpe y aturdes al espectro
+    const PA = CONFIG.parada || {}, eqArma = prog.equipo?.arma, atq = !esVillano() && eqArma ? atributo('ataque') : 0;
+    if (atq > 0 && reloj - (h.ultimaParada || -99) > (PA.espera ?? 15) && Math.random() < Math.min(PA.maximo ?? .35, atq * (PA.porAtaque ?? .012))) {
+      h.ultimaParada = reloj; contar('paradas'); e.lento = PA.aturde ?? 1.8; e.estado = 'busca'; e.ruta = []; e.tEspera = 1.5; h.inv = Math.max(h.inv, 1.2); temblor = .2;
+      efectos.push({ tipo: 'puf', x: e.x, y: e.y, t: .5, dur: .5 });
+      [1200, 900, 1500].forEach((f, i) => setTimeout(() => pitido(f, .09, 'square', .45, f * .7), i * 45));
+      decir('¡Parada! ' + ((EQUIPO.objetos[eqArma] || {}).nombre || 'Tu arma') + ' desvía el golpe', 2.2); return;
     }
     if (L.exterior) {
       h.x = (L.inicio[0] + .5) * T; h.y = (L.inicio[1] + .5) * T; h.inv = 2;
@@ -929,7 +941,16 @@
       torre.botin.monedas += mon + extraF; torre.botin.xp += B.xp * n;
       let mat = null; if (n % B.materialCada === 0) { mat = ks[Math.min(ks.length - 1, floor(n / 5))]; torre.botin.materiales[mat] = (torre.botin.materiales[mat] || 0) + 1 + floor(n / 6); }
       const fich = TW().pisos[n - 1].jefe ? B.fichasEnJefe : 0; torre.botin.fichas += fich;
-      torre.resultado = { ok, n, mon, extraF, fantasma, mat, fich };
+      // v0.66: cada jefe suelta una pieza de equipo que aún no tengas (se queda tuya aunque te retires)
+      let pieza = null;
+      if (TW().pisos[n - 1].jefe) {
+        const nivel = torre.def ? 2 : Math.min(2, Math.max(0, floor(n / 5) - 1)), lote = EQUIPO.botin[nivel] || EQUIPO.botin[0];
+        const faltan = lote.objetos.filter(id => !prog.inventario[id]), armasF = faltan.filter(id => EQUIPO.objetos[id]?.tipo === 'arma');
+        const elegido = (armasF.length ? armasF : faltan)[floor(Math.random() * (armasF.length || faltan.length))];
+        if (elegido) { prog.inventario[elegido] = 1; pieza = EQUIPO.objetos[elegido].nombre; guardarProg(); }
+        else { for (const [k, v] of Object.entries(lote.materiales)) torre.botin.materiales[k] = (torre.botin.materiales[k] || 0) + v; }
+      }
+      torre.resultado = { ok, n, mon, extraF, fantasma, mat, fich, pieza };
       contar('plantas'); if (TW().pisos[n - 1].jefe) contar('jefes');
       const pool = cartasT().filter(c => !torre.cartas.includes(c.id) || c.mod.botin || c.mod.tiempo);
       torre.ofertas = []; while (torre.ofertas.length < 3 && pool.length) torre.ofertas.push(pool.splice(floor(Math.random() * pool.length), 1)[0]);
@@ -947,7 +968,7 @@
     L2.push(...darPremio(p));
     for (const k in b.materiales) { const c = Math.round(b.materiales[k] * factor); if (c) { prog.materiales[k] = (prog.materiales[k] || 0) + c; L2.push((EQUIPO.materiales[k] || k) + ' × ' + c); } }
     const finalHecho = torre.def && torre.resultado?.ok && torre.resultado.n >= TW().pisos.length;
-    if (finalHecho) { const primera = !prog.final; prog.final = (prog.final || 0) + 1; if (primera) L2.push(...darPremio(Object.assign({ siRepetido: 300 }, FN().premio))); }
+    if (finalHecho) { contar('finales'); const primera = !prog.final; prog.final = (prog.final || 0) + 1; if (primera) L2.push(...darPremio(Object.assign({ siRepetido: 300 }, FN().premio))); }
     else if (torre.resultado?.ok && torre.resultado.n >= TW().pisos.length) { L2.push(...darPremio({ objeto: ['Legendario'], siRepetido: 300 })); contar('torres'); }
     guardarProg(); torre = null; irMenu(); decir('Botín: ' + (L2.join(' · ') || 'nada'), 4.5); SON.entregar();
     if (finalHecho) setTimeout(abrirEpilogo, 600);
@@ -960,7 +981,7 @@
       const f = modT('todoONada') ? 0 : TW().siFallas;
       return '<div class="rq-hanko">敗</div><h2>Se acabó el tiempo</h2><p>Piso ' + r.n + ' sin completar.</p>' + bolsa + '<p>' + (f ? 'Te llevas el ' + Math.round(f * 100) + ' % del botín.' : 'Doble o nada: lo pierdes todo.') + '</p><button class="rq-b" data-a="cobrarTorre" data-id="' + f + '">Volver con lo que queda</button>';
     }
-    const lineas = [['Piso superado', '◈ +' + r.mon], r.fantasma && ['¡Fantasma! Nadie te vio', '◈ +' + r.extraF], r.mat && ['Material', EQUIPO.materiales[r.mat]], r.fich && ['Jefe derrotado', '✦ +' + r.fich]].filter(Boolean)
+    const lineas = [['Piso superado', '◈ +' + r.mon], r.fantasma && ['¡Fantasma! Nadie te vio', '◈ +' + r.extraF], r.mat && ['Material', EQUIPO.materiales[r.mat]], r.fich && ['Jefe derrotado', '✦ +' + r.fich], r.pieza && ['Botín del jefe', r.pieza]].filter(Boolean)
       .map(([a, v], i) => '<li class="rq-pop" style="animation-delay:' + (i * .25) + 's"><span>' + esc(a) + '</span><b>' + esc(String(v)) + '</b></li>').join('');
     if (r.n >= N && torre.def) return '<div class="rq-hanko">終</div><h2>El agua vuelve a su cauce</h2><ul class="rq-premios">' + lineas + '</ul>' + bolsa + (prog.final ? '' : '<p>Premio de la historia: ◈ ' + FN().premio.monedas + ' · ✦ ' + FN().premio.fichas + ' · objeto Legendario.</p>') + '<button class="rq-b" data-a="cobrarTorre" data-id="1">Ver el final</button>';
     if (r.n >= N) return '<div class="rq-hanko">覇</div><h2>¡Has conquistado la Torre!</h2><ul class="rq-premios">' + lineas + '</ul>' + bolsa + '<p>Premio final: un objeto Legendario.</p><button class="rq-b" data-a="cobrarTorre" data-id="1">Cobrar todo</button>';
@@ -1092,6 +1113,7 @@
       '<button class="rq-b" data-a="entendido">Entendido</button>';
   }
   function actualizar(dt) {
+    if (fase === 'combate') { reloj += dt; return; }   // v0.69: el mundo espera durante el combate
     if (consejo) return;   // el mundo espera mientras lees el consejo
     actualizarCofres(dt); if (cofreAbierto && cofreAbierto.mostrar <= 0) return;
     if (torre && torre.lenta > 0) { torre.lenta -= dt; dt *= .35; }   // cámara lenta del «¡por poco!»
@@ -1116,7 +1138,8 @@
       for (const gm of gemas) if (gm.estado === 'espera') { gm.t -= dt; if (gm.t <= 0) reaparecerGema(gm); }
       for (const b of turbos) if (b.t > 0) b.t -= dt;
       for (const p of portales) if (p.t > 0) p.t -= dt;
-      if (armaCd > 0) armaCd -= dt; if (cdCorte > 0) cdCorte -= dt;
+      for (const k in cds) if (cds[k] > 0) cds[k] -= dt;   // v0.68: cada habilidad tiene su propia espera
+      if (apuntaCampana > 0 && (apuntaCampana -= dt) <= 0) soltarCampana(floor(h.x / T), floor(h.y / T)); if (cdCorte > 0) cdCorte -= dt;
       if (btnCorte) btnCorte.classList.toggle('on', !esVillano() && !!objetivoCorte());
       for (const ef of efectos) ef.t -= dt; efectos = efectos.filter(ef => ef.t > 0);
       for (const q of proyectiles) {   // estrella ninja: no hace daño, pero el ruido donde cae los despista
@@ -1142,7 +1165,7 @@
     } else if (fase === 'aldea') {
       moverTaller(dt);
       if (!dlg && !tienda && !panelMundo) {
-        armaCd = Math.max(0, armaCd - dt);
+        for (const k in cds) cds[k] = Math.max(0, cds[k] - dt);
         for (const ef of efectos) ef.t -= dt;
         efectos = efectos.filter(ef => ef.t > 0);
         actualizarHeroe(dt);
@@ -1216,7 +1239,7 @@
   const imgRel = {};
   function dibujaGema(x, y, s, valor, completo) {
     { const id = ['grulla', 'tetera', 'daruma'][valor - 1], k = 'assets/mundo/reliquia-' + id + '.webp', src = id && arteIntegrado[k];   // v0.61: reliquias con imagen
-      if (src) { let im = imgRel[k]; if (!im) { im = imgRel[k] = new Image(); im.src = src; } if (im.naturalWidth) { const a = s * (valor === 1 ? 7.5 : 7), w = a * im.naturalWidth / Math.max(im.naturalWidth, im.naturalHeight), hh = a * im.naturalHeight / Math.max(im.naturalWidth, im.naturalHeight); g.drawImage(im, x - w / 2, y - hh * .62, w, hh); return; } } }
+      if (src) { let im = imgRel[k]; if (!im) { im = imgRel[k] = new Image(); im.src = src; } if (im.naturalWidth) { const a = s * (valor === 1 ? 7.5 : ((CONFIG.gemas || {}).tamReliquia ?? 6.1)), w = a * im.naturalWidth / Math.max(im.naturalWidth, im.naturalHeight), hh = a * im.naturalHeight / Math.max(im.naturalWidth, im.naturalHeight); g.drawImage(im, x - w / 2, y - hh * .62, w, hh); return; } } }
     const c = col()['gema' + valor] || '#ffffff';
     if (!imagenes.gema && CONFIG.gemas.estilo === 'reliquias') return dibujaReliquia(x, y, s * 1.15, valor, completo);
     if (imagenes.gema) { g.drawImage(imagenes.gema, x - s * 1.3, y - s * 1.3, s * 2.6, s * 2.6); return; }
@@ -1396,7 +1419,7 @@
   }
 
   // ---------- ALDEA: vecinos, misiones y armas ----------
-  let prog, dlg = null, cerca = null, armaCd = 0, efectos = [], dlgEl, btnAccion, btnDojo, etiquetaAccion = null;
+  let prog, dlg = null, cerca = null, cds = {}, efectos = [], dlgEl, btnAccion, btnDojo, etiquetaAccion = null;
   const hayAldea = () => typeof ALDEA !== 'undefined' && ALDEA && ALDEA.mapa;
   const armas = () => CONFIG.armas || {};
   function leerProg() { prog = progNuevo(); try { const p = JSON.parse(localStorage.getItem('reliquias-progreso') || 'null'); if (p) { prog = Object.assign(progNuevo(), p); if (!p.versionJade) prog.huevo = false;
@@ -1412,7 +1435,8 @@
     if (!hayAldea()) return irMenu();
     const primeraVisita = id !== 'aldea' && !prog.visitadas.includes(id);
     zonaId = id; fase = 'aldea'; bando = 'heroe'; tienda = false; dlg = null; cerca = null; panelMundo = '';
-    cargarNivel(0, true); ignorarHasta = performance.now() + 6000; colocarCofres(); setTimeout(comprobarDiaria, 1800);
+    umbralPelea = 0; ultCasillaPelea = ''; if (id === 'aldea' && prog) prog.pv = null;   // v0.69: en la aldea recuperas toda la vida
+    cargarNivel(0, true); ignorarHasta = performance.now() + 6000; colocarCofres(); colocarVetas(); setTimeout(comprobarDiaria, 1800);
     for (const [fx, fy] of (((CONFIG.decoracion || {}).faroles || {})[id] || [])) if (L.c[fy] && L.c[fy][fx] === 0) L.c[fy][fx] = 7;   // los faroles no se atraviesan
     if (id === 'aldea' && ZU()) { const p = ZU().puesto; for (let yy = p.y; yy < p.y + p.fondo; yy++) for (let xx = p.x; xx < p.x + p.ancho; xx++) if (L.c[yy] && L.c[yy][xx] === 0) L.c[yy][xx] = 7; TALLER.zumos = p; }
     if (id !== zonaPrevia) cortina = { t: 0, nombre: nombreZona(id), preparada: false }; zonaPrevia = id;
@@ -1573,7 +1597,7 @@
     const gr = g.createLinearGradient(x, 0, x + w, 0); gr.addColorStop(0, '#5fbf4a'); gr.addColorStop(1, '#c8f070');
     g.fillStyle = gr; g.beginPath(); g.roundRect(x, y, Math.max(2, w * prog._xpVis), 4, 2); g.fill();
     g.font = '700 ' + (IW < 300 ? 8.5 : 7.5) + 'px Georgia,serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,.6)';
-    const t = 'Nv. ' + n + ' · ' + Math.floor(k * 100) + ' %'; g.strokeText(t, IW / 2, y - 1.5); g.fillStyle = '#dff5b8'; g.fillText(t, IW / 2, y - 1.5);
+    const t = 'Nv. ' + n + ' · ' + Math.floor(k * 100) + ' %' + (CB() && zonaId !== 'aldea' && fase === 'aldea' ? '   ♥ ' + vidaHeroe() + '/' + pvMax() : ''); g.strokeText(t, IW / 2, y - 1.5); g.fillStyle = '#dff5b8'; g.fillText(t, IW / 2, y - 1.5);
     for (const f of xpFlot) { f.t -= 1 / 60; const yy = f.y - (1.5 - f.t) * 16; g.globalAlpha = Math.min(1, f.t * 2); g.font = 'italic 700 9px Georgia,serif'; g.textBaseline = 'middle'; g.strokeText(f.txt, f.x, yy); g.fillStyle = '#c8f070'; g.fillText(f.txt, f.x, yy); g.globalAlpha = 1; }
     xpFlot = xpFlot.filter(f => f.t > 0);
   }
@@ -1604,7 +1628,20 @@
   function contar(stat, n = 1) {
     const E = EC(); if (!E || !prog) return;
     prog.stats = prog.stats || {}; const antes = prog.stats[stat] || 0; prog.stats[stat] = antes + n;
-    for (const l of E.logros) if (l.stat === stat && antes < l.meta && prog.stats[stat] >= l.meta) { decir('Logro: ' + l.nombre + ' · cóbralo en Misiones › Recompensas', 3.2); [880, 1175].forEach((q, i) => setTimeout(() => pitido(q, .14, 'triangle', .45), i * 90)); }
+    for (const l of E.logros) if (l.stat === stat && antes < l.meta && prog.stats[stat] >= l.meta) medalla({ icono: l.icono || '賞', tipo: 'Logro conseguido', nombre: l.nombre, sub: l.desc || '' });
+  }
+  // v0.67: medalla que aparece arriba al conseguir un logro o terminar una misión (se van poniendo en cola)
+  const colaMedallas = []; let medallaViva = false;
+  function medalla(m) {
+    colaMedallas.push(m); if (medallaViva || !cont) return;
+    const sig = () => {
+      const x = colaMedallas.shift(); if (!x) { medallaViva = false; return; } medallaViva = true;
+      const el = document.createElement('div'); el.className = 'rq-medalla' + (x.mision ? ' mision' : '');
+      el.innerHTML = '<div class="rq-med-disco"><span>' + esc(x.icono) + '</span></div><div class="rq-med-txt"><small>' + esc(x.tipo) + '</small><b>' + esc(x.nombre) + '</b>' + (x.sub ? '<em>' + esc(x.sub) + '</em>' : '') + '</div>';
+      cont.appendChild(el); [784, 1047, 1319, 1568].forEach((q, i) => setTimeout(() => pitido(q, .22, 'triangle', .42), i * 85));
+      setTimeout(() => el.classList.add('fuera'), 3400); setTimeout(() => { el.remove(); sig(); }, 3900);
+    };
+    sig();
   }
   const logrosPorCobrar = () => (EC()?.logros || []).filter(l => (prog.stats?.[l.stat] || 0) >= l.meta && !prog.cobrados?.[l.id]).length;
   function comprobarDiaria() {
@@ -1624,10 +1661,11 @@
     const filas = E.logros.map(l => {
       const v = Math.min(l.meta, prog.stats[l.stat] || 0), ok = v >= l.meta, cobrado = prog.cobrados[l.id];
       const pr = [l.premio.monedas && '◈ ' + Math.round(l.premio.monedas * rango().mult), l.premio.fichas && '✦ ' + l.premio.fichas, l.premio.material && (EQUIPO.materiales[l.premio.material[0]] || '') + ' ×' + l.premio.material[1], l.premio.objeto && '⚔ ' + l.premio.objeto.join('/')].filter(Boolean).join(' · ');
-      return '<div class="rq-logro' + (cobrado ? ' cobrado' : ok ? ' listo' : '') + '"><div><b>' + esc(l.nombre) + '</b><small>' + v + ' / ' + l.meta + ' · ' + pr + '</small><progress value="' + v + '" max="' + l.meta + '"></progress></div>' +
-        (cobrado ? '<em>✓</em>' : ok ? '<button class="rq-c" data-a="cobrarLogro" data-id="' + l.id + '">Cobrar</button>' : '') + '</div>';
+      return '<div class="rq-logro2' + (cobrado ? ' cobrado' : ok ? ' listo' : ' bloq') + '"><div class="rq-med-disco"><span>' + esc(l.icono || '賞') + '</span></div><b>' + esc(l.nombre) + '</b><small>' + esc(l.desc || '') + '</small>' +
+        (cobrado ? '<em>✓ ' + esc(pr) + '</em>' : ok ? '<button class="rq-c" data-a="cobrarLogro" data-id="' + l.id + '">Cobrar · ' + esc(pr) + '</button>' : '<i style="--p:' + (v / l.meta * 100).toFixed(0) + '%"></i><small>' + v + ' / ' + l.meta + '</small>') + '</div>';
     }).join('');
-    return '<div class="rq-hanko">賞</div><h2>Recompensas</h2><p>Rango <b>' + esc(rango().nombre) + '</b> (nivel ' + nivelDe(prog.xp) + ') · premios ×' + rango().mult + '</p>' + filas + '<button class="rq-b sec" data-a="cerrarEco">Volver</button>';
+    const hechos = E.logros.filter(l => (prog.stats[l.stat] || 0) >= l.meta).length;
+    return '<div class="rq-hanko">賞</div><h2>Logros</h2><p>' + hechos + ' de ' + E.logros.length + ' · premios ×' + rango().mult + ' (' + esc(rango().nombre) + ')</p><div class="rq-logros">' + filas + '</div><button class="rq-b sec" data-a="cerrarEco">Volver</button>';
   }
   // ofertas del mercado: cambian cada día y según tu rango
   function ofertasDelDia() {
@@ -1659,6 +1697,200 @@
     for (const k in E.mercado.venta) o += '<div class="rq-item"><div style="flex:1"><b>' + esc(EQUIPO.materiales[k] || k) + '</b> <small>tienes ' + (prog.materiales[k] || 0) + '</small></div><button class="rq-c" data-a="venderMaterial" data-id="' + k + '"' + (prog.materiales[k] > 0 ? '' : ' disabled') + '>+' + E.mercado.venta[k] + ' monedas</button></div>';
     return o;
   }
+  // ---------- v0.69 COMBATE POR TURNOS, MINERÍA Y REFINADO (datos en combate.js) ----------
+  const CB = () => (typeof COMBATE !== 'undefined' ? COMBATE : null);
+  let pelea = null, pasosPelea = 0, umbralPelea = 0, ultCasillaPelea = '';
+  const pvMax = () => { const H2 = CB().heroe; return Math.round(H2.pvBase + H2.pvPorNivel * (nivelDe(prog.xp) - 1) + atributo('defensa')); };
+  const vidaHeroe = () => (prog.pv == null ? pvMax() : Math.min(prog.pv, pvMax()));
+  function nuevoUmbral() { const r = (CB().pasos[zonaId] || [35, 45]); umbralPelea = r[0] + floor(Math.random() * (r[1] - r[0] + 1)); pasosPelea = 0; }
+  // cuenta casillas andadas fuera de la aldea; al llegar al umbral, combate
+  function contarPasoPelea() {
+    if (!CB() || fase !== 'aldea' || !L.exterior || zonaId === 'aldea' || !CB().zonas[zonaId] || dlg || panelMundo || tienda || mapaExplorador) return;
+    const k = floor(h.x / T) + ',' + floor(h.y / T); if (k === ultCasillaPelea) return; ultCasillaPelea = k;
+    if (!umbralPelea) nuevoUmbral();
+    if (++pasosPelea >= umbralPelea) { nuevoUmbral(); iniciarPelea(); }
+  }
+  function iniciarPelea() {
+    const C = CB(), lista = C.zonas[zonaId]; if (!lista) return;
+    const [a, b] = C.grupo[zonaId] || [1, 2], n = a + floor(Math.random() * (b - a + 1));
+    const enemigos = [];
+    for (let i = 0; i < n; i++) { const id = lista[floor(Math.random() * lista.length)], M = C.monstruos[id]; enemigos.push({ id, ...M, hab: M.hab || [], pvMax: M.pv, cargando: false, protegido: false, intencion: null }); }
+    prog.pv = vidaHeroe();
+    pelea = { enemigos, esp: 1, defendiendo: false, cargaHeroe: false, turno: 1, log: '¡' + (n > 1 ? 'Te salen al paso ' + n + ' criaturas' : 'Una criatura te sale al paso') + '!', menu: '', bloqueo: true, botin: { xp: 0, monedas: 0, menas: {}, te: 0 }, fondo: rutaCombate(C.fondos[zonaId] || 'fondo-bosque') };
+    fase = 'combate'; soltarJoy(); teclas.clear(); cerca = null;
+    for (const e of enemigos) decidirIntencion(e);
+    pitido(220, .2, 'square', .5, 440); setTimeout(() => pitido(330, .25, 'square', .5, 660), 120);
+    pintarPelea(true); setTimeout(() => { if (pelea) { pelea.bloqueo = false; pintarPelea(); } }, 900);
+  }
+  const rutaCombate = id => arteIntegrado['assets/combate/' + id + '.webp'] || '';
+  function decidirIntencion(e) {
+    const r = Math.random(), hab = e.hab;
+    if (e.cargando) { e.intencion = { tipo: 'golpe', dano: Math.round(e.atq * 2.2), txt: '⚔ ' + Math.round(e.atq * 2.2) + ' ¡fuerte!' }; return; }
+    if (hab.includes('cura') && e.pv < e.pvMax * .5 && r < .45) { e.intencion = { tipo: 'cura', txt: '✚ curarse' }; return; }
+    if (hab.includes('coraza') && r < .25) { e.intencion = { tipo: 'coraza', txt: '🛡 protegerse' }; return; }
+    if (hab.includes('fuerte') && r < .3) { e.intencion = { tipo: 'cargar', txt: '⚡ cargando…' }; return; }
+    const doble = hab.includes('doble') && r > .55, drena = hab.includes('drena') && r > .5;
+    e.intencion = { tipo: doble ? 'doble' : drena ? 'drena' : 'golpe', dano: e.atq, txt: doble ? '⚔ ' + e.atq + ' ×2' : drena ? '♥ ' + e.atq + ' roba' : '⚔ ' + e.atq };
+  }
+  function danoHeroe(e, mult) {
+    const H2 = CB().heroe, arma = prog.equipo?.arma, fuerte = arma && (CB().fuerteContra[arma] || []).includes(e.tipo);
+    let d = (H2.golpeBase + H2.golpePorNivel * nivelDe(prog.xp) + atributo('ataque') * H2.porAtaque) * mult * (0.9 + Math.random() * .2);
+    if (fuerte) d *= CB().multiplicadorTipo;
+    const crit = Math.random() < H2.critico; if (crit) d *= H2.multCritico;
+    if (e.protegido) d *= .5;
+    return { d: Math.max(1, Math.round(d)), crit, fuerte };
+  }
+  function golpear(e, mult) {
+    const r = danoHeroe(e, mult); e.pv = Math.max(0, e.pv - r.d);
+    flotante(pelea.enemigos.indexOf(e), (r.crit ? '¡' + r.d + '!' : r.d) + (r.fuerte ? ' ✦' : ''), r.crit ? '#ffd35a' : '#fff');
+    pitido(r.crit ? 180 : 260, .12, 'square', .7, 80); return r;
+  }
+  function accionPelea(a, x) {
+    if (!pelea || pelea.bloqueo) return;
+    const H2 = CB().heroe, vivos = pelea.enemigos.filter(e => e.pv > 0);
+    if (a === 'menuTec' || a === 'menuObj') { pelea.menu = pelea.menu === a ? '' : a; pintarPelea(); return; }
+    if (a === 'atacar') { const e = vivos[x != null ? +x : 0] || vivos[0]; const r = golpear(e, 1); pelea.log = 'Golpeas a ' + e.nombre + (r.fuerte ? ': ¡tu arma le hace mucho daño!' : '.'); }
+    else if (a === 'tec') {
+      const t = CB().tecnicas.find(t => t.id === x); if (!t || pelea.esp < t.coste) return; pelea.esp -= t.coste;
+      if (t.objetivo === 'todos') { for (const e of vivos) golpear(e, t.mult); pelea.log = t.nombre + ': el viento corta a todos.'; }
+      else if (t.objetivo === 'yo') { const c = Math.round(pvMax() * t.cura); prog.pv = Math.min(pvMax(), vidaHeroe() + c); flotante(-1, '+' + c, '#8ff08a'); pelea.log = t.nombre + ': recuperas ' + c + ' de vida.'; pitido(523, .3, 'sine', .5, 784); }
+      else { const e = vivos[0]; golpear(e, t.mult); pelea.log = t.nombre + ' contra ' + e.nombre + '.'; }
+    }
+    else if (a === 'defender') { pelea.defendiendo = true; pelea.esp = Math.min(H2.espirituMax, pelea.esp + H2.espirituAlDefender); pelea.log = 'Te cubres con la vaina y respiras hondo. +' + H2.espirituAlDefender + ' ✦'; pitido(400, .1, 'triangle', .5); }
+    else if (a === 'te') { if (!(prog.tes > 0)) return; prog.tes--; const c = Math.round(pvMax() * CB().te.cura); prog.pv = Math.min(pvMax(), vidaHeroe() + c); flotante(-1, '+' + c, '#8ff08a'); pelea.log = 'Bebes un té verde. +' + c + ' de vida.'; pitido(659, .25, 'sine', .5); }
+    else if (a === 'huir') { if (Math.random() < H2.huida) { pelea.log = 'Huyes entre los árboles.'; terminarPelea('huida'); return; } pelea.log = '¡No consigues escapar!'; }
+    else return;
+    pelea.menu = '';
+    if (pelea.enemigos.every(e => e.pv <= 0)) { pintarPelea(); pelea.bloqueo = true; setTimeout(() => terminarPelea('victoria'), 700); return; }
+    pelea.bloqueo = true; pintarPelea();
+    setTimeout(turnoEnemigos, 650);
+  }
+  function turnoEnemigos() {
+    if (!pelea) return;
+    const vivos = pelea.enemigos.filter(e => e.pv > 0); let i = 0;
+    const siguiente = () => {
+      if (!pelea) return;
+      if (i >= vivos.length) {
+        pelea.defendiendo = false; pelea.turno++; pelea.esp = Math.min(CB().heroe.espirituMax, pelea.esp + CB().heroe.espirituPorTurno);
+        for (const e of vivos) decidirIntencion(e);
+        if (vidaHeroe() <= 0) { setTimeout(() => terminarPelea('derrota'), 500); pintarPelea(); return; }
+        pelea.bloqueo = false; pintarPelea(); return;
+      }
+      const e = vivos[i++], it = e.intencion; e.protegido = false;
+      const pegar = dano => { let d = Math.max(1, Math.round(dano * (pelea.defendiendo ? .45 : 1) * (0.9 + Math.random() * .2))); prog.pv = Math.max(0, vidaHeroe() - d); flotante(-1, '-' + d, '#ff7a7a'); temblorPelea(); pitido(120, .18, 'sawtooth', .6, 60); return d; };
+      if (it.tipo === 'cura') { const c = Math.round(e.pvMax * .3); e.pv = Math.min(e.pvMax, e.pv + c); flotante(pelea.enemigos.indexOf(e), '+' + c, '#8ff08a'); pelea.log = e.nombre + ' se cura.'; }
+      else if (it.tipo === 'coraza') { e.protegido = true; pelea.log = e.nombre + ' se protege (recibe la mitad).'; }
+      else if (it.tipo === 'cargar') { e.cargando = true; pelea.log = e.nombre + ' está cargando un golpe fuerte. ¡Defiéndete!'; }
+      else if (it.tipo === 'doble') { pegar(it.dano); setTimeout(() => pelea && pegar(it.dano), 250); pelea.log = e.nombre + ' ataca dos veces.'; }
+      else if (it.tipo === 'drena') { const d = pegar(it.dano); e.pv = Math.min(e.pvMax, e.pv + d); pelea.log = e.nombre + ' te roba ' + d + ' de vida.'; }
+      else { const d = pegar(it.dano); if (e.cargando) e.cargando = false; pelea.log = e.nombre + ' te golpea' + (pelea.defendiendo ? ' (te cubres)' : '') + ': -' + d + '.'; }
+      if (it.tipo !== 'cargar') e.cargando = it.tipo === 'golpe' ? false : e.cargando;
+      pintarPelea(); setTimeout(siguiente, 600);
+    };
+    siguiente();
+  }
+  function terminarPelea(fin) {
+    if (!pelea) return; const P2 = pelea, C = CB();
+    if (fin === 'victoria') {
+      let xp = 0, mon = 0; const menas = {}; let tes = 0;
+      for (const e of P2.enemigos) {
+        xp += e.xp; mon += e.monedas;
+        if (Math.random() < C.botin.mena) { const m = sortearMena(C.picos.pico.tabla); menas[m] = (menas[m] || 0) + 1; }
+        if (Math.random() < C.botin.te) tes++;
+      }
+      mon = Math.round(mon * rango().mult);
+      prog.puntos += mon; ganarXP(xp); prog.menas = prog.menas || {}; for (const k in menas) prog.menas[k] = (prog.menas[k] || 0) + menas[k]; prog.tes = (prog.tes || 0) + tes;
+      contar('combates');
+      P2.resumen = '<div class="rq-pl-fin"><div class="rq-hanko">勝</div><h2>¡Victoria!</h2><p>◈ ' + mon + ' · ' + xp + ' XP' + Object.entries(menas).map(([k, v]) => ' · ' + C.minerales[k].icono + ' ' + C.minerales[k].nombre + ' ×' + v).join('') + (tes ? ' · 🍵 Té ×' + tes : '') + '</p><button class="rq-b" data-p="cerrar">Seguir</button></div>';
+      [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => pitido(f, .2, 'triangle', .5), i * 110));
+    } else if (fin === 'derrota') {
+      prog.pv = pvMax();
+      P2.resumen = '<div class="rq-pl-fin"><div class="rq-hanko">敗</div><h2>Has caído</h2><p>Despiertas en la aldea, con el cuerpo dolorido pero entero.</p><button class="rq-b" data-p="cerrar">Volver a la aldea</button></div>';
+      P2.volver = true; pitido(110, .6, 'sawtooth', .6, 55);
+    } else { P2.resumen = null; }
+    guardarProg();
+    if (P2.resumen) { P2.bloqueo = false; pintarPelea(); } else cerrarPelea();
+  }
+  function cerrarPelea() {
+    const v = pelea && pelea.volver; if (pelea && pelea.el) { pelea.el.remove(); pelea.capa.remove(); } pelea = null; fase = 'aldea'; h.inv = 1.5;
+    if (v) irAldea('aldea'); pintarUI();
+  }
+  function flotante(i, txt, color) {
+    // los números van en una capa aparte para que no se borren al repintar
+    if (!pelea?.el) return; const host = i < 0 ? pelea.el.querySelector('.rq-pl-heroe') : pelea.el.querySelectorAll('.rq-pl-ene')[i]; if (!host) return;
+    const r = host.getBoundingClientRect(), r0 = cont.getBoundingClientRect(), s = document.createElement('span');
+    s.className = 'rq-pl-num'; s.textContent = txt; s.style.color = color; s.style.left = (r.left - r0.left + r.width / 2) + 'px'; s.style.top = (r.top - r0.top + r.height * .3) + 'px';
+    pelea.capa.appendChild(s); setTimeout(() => s.remove(), 950);
+    if (i >= 0) pelea.enemigos[i].flash = true; else pelea.flashHeroe = true;
+  }
+  function temblorPelea() { const el = pelea?.el?.querySelector('.rq-pl-escena'); if (!el) return; el.classList.remove('tiembla'); void el.offsetWidth; el.classList.add('tiembla'); }
+  function pintarPelea(nueva) {
+    if (!pelea) return; const C = CB();
+    if (!pelea.el) {
+      pelea.el = document.createElement('div'); pelea.el.className = 'rq-pelea'; cont.appendChild(pelea.el); pelea.capa = document.createElement('div'); pelea.capa.className = 'rq-pl-capa'; cont.appendChild(pelea.capa);
+      pelea.el.addEventListener('click', ev => { ev.stopPropagation(); const b = ev.target.closest('[data-p]'); if (!b || b.disabled) return; const a = b.dataset.p; if (a === 'cerrar') { cerrarPelea(); return; } accionPelea(a, b.dataset.x); });
+      pelea.el.addEventListener('pointerdown', ev => ev.stopPropagation());
+    }
+    const pv = vidaHeroe(), pm = pvMax(), arma = prog.equipo?.arma, retr = (prog.aspecto === 'ronin' || !prog.aspecto) && rutaArte('ronin-idle') ? rutaArte('ronin-idle') : (CONFIG.aspectos[prog.aspecto] || {}).retrato;
+    const enes = pelea.enemigos.map((e, i) => {
+      const T2 = C.tipos[e.tipo] || {}, muerto = e.pv <= 0, fuerte = arma && (C.fuerteContra[arma] || []).includes(e.tipo);
+      const fl = e.flash; e.flash = false;
+      return '<div class="rq-pl-ene' + (fl ? ' golpe' : '') + (muerto ? ' muerto' : '') + (e.cargando ? ' carga' : '') + (e.protegido ? ' prot' : '') + '"><div class="rq-pl-int">' + (muerto ? '' : esc(e.intencion?.txt || '')) + '</div>' +
+        '<img src="' + rutaCombate('m-' + e.id) + '" alt="">' +
+        '<div class="rq-pl-ficha"><b><i style="background:' + T2.color + '">' + T2.icono + '</i>' + esc(e.nombre) + (fuerte && !muerto ? ' <em>✦ débil</em>' : '') + '</b><div class="rq-pl-barra"><span style="width:' + (e.pv / e.pvMax * 100) + '%"></span></div><small>' + e.pv + ' / ' + e.pvMax + '</small></div>' +
+        (muerto || pelea.bloqueo || pelea.resumen ? '' : '<button class="rq-pl-diana" data-p="atacar" data-x="' + pelea.enemigos.filter(o => o.pv > 0).indexOf(e) + '" aria-label="Atacar a ' + esc(e.nombre) + '"></button>') + '</div>';
+    }).join('');
+    const tec = C.tecnicas.map(t => '<button data-p="tec" data-x="' + t.id + '"' + (pelea.esp < t.coste ? ' disabled' : '') + '><i>' + t.icono + '</i><b>' + esc(t.nombre) + '</b><small>' + '✦'.repeat(t.coste) + ' · ' + esc(t.desc) + '</small></button>').join('');
+    const obj = '<button data-p="te"' + (prog.tes > 0 ? '' : ' disabled') + '><i>🍵</i><b>' + esc(C.te.nombre) + ' ×' + (prog.tes || 0) + '</b><small>' + esc(C.te.desc) + '</small></button><button data-p="huir"><i>走</i><b>Huir</b><small>' + Math.round(C.heroe.huida * 100) + ' % de escapar</small></button>';
+    const esp = '<span class="rq-pl-esp">' + Array.from({ length: C.heroe.espirituMax }, (_, k) => '<i class="' + (k < pelea.esp ? 'on' : '') + '">✦</i>').join('') + '</span>';
+    const fhH = pelea.flashHeroe; pelea.flashHeroe = false;
+    pelea.el.innerHTML = '<div class="rq-pl-escena' + (nueva ? ' entra' : '') + '" style="background-image:url(' + pelea.fondo + ')">' +
+      '<div class="rq-pl-enes">' + enes + '</div>' +
+      '<div class="rq-pl-heroe' + (pelea.defendiendo ? ' def' : '') + (fhH ? ' herido' : '') + '">' + (retr ? '<img src="' + retr + '" alt="">' : '') + '<div class="rq-pl-ficha"><b>' + esc(jugador) + ' · Nv. ' + nivelDe(prog.xp) + '</b><div class="rq-pl-barra vida"><span style="width:' + (pv / pm * 100) + '%"></span></div><small>' + pv + ' / ' + pm + ' PV</small>' + esp + '</div></div></div>' +
+      '<div class="rq-pl-panel"><p class="rq-pl-log">' + esc(pelea.log) + '</p>' +
+      (pelea.resumen ? pelea.resumen :
+      (pelea.menu === 'menuTec' ? '<div class="rq-pl-sub">' + tec + '</div>' : pelea.menu === 'menuObj' ? '<div class="rq-pl-sub">' + obj + '</div>' : '') +
+      '<div class="rq-pl-acc"><button data-p="atacar"' + (pelea.bloqueo ? ' disabled' : '') + '><i>斬</i>Atacar</button><button data-p="menuTec" class="' + (pelea.menu === 'menuTec' ? 'on' : '') + '"' + (pelea.bloqueo ? ' disabled' : '') + '><i>技</i>Técnica</button><button data-p="defender"' + (pelea.bloqueo ? ' disabled' : '') + '><i>守</i>Defender</button><button data-p="menuObj" class="' + (pelea.menu === 'menuObj' ? 'on' : '') + '"' + (pelea.bloqueo ? ' disabled' : '') + '><i>袋</i>Más</button></div>') + '</div>';
+  }
+  function sortearMena(tabla) { const tot = Object.values(tabla).reduce((a, b) => a + b, 0); let x = Math.random() * tot; for (const k in tabla) { if (x < tabla[k]) return k; x -= tabla[k]; } return 'hierro'; }
+
+  // --- vetas de mineral en cada zona del mundo (se renuevan cada día) ---
+  let vetas = [];
+  function colocarVetas() {
+    vetas = []; const C = CB(); if (!C || !L.exterior || zonaId === 'aldea' || !C.zonas[zonaId]) return;
+    const dia = hoy(), clave = 'v' + zonaId + '@' + dia; prog.vetas = prog.vetas || {}; if (prog.vetasDia !== dia) { prog.vetas = {}; prog.vetasDia = dia; }
+    const rnd = semilla([...clave].reduce((a, c) => a * 31 + c.charCodeAt(0) | 0, 11) >>> 0), libres = [];
+    for (let y = 2; y < L.rows - 2; y++) for (let x = 2; x < L.cols - 2; x++) {
+      if (L.c[y][x] !== 0) continue; let v = 0; for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) if (L.c[y + dy]?.[x + dx] === 0) v++; if (v < 4) continue;
+      if (L.npcs.some(n => abs(n.tx - x) + abs(n.ty - y) < 3) || cofres.some(c => abs(c.tx - x) + abs(c.ty - y) < 3)) continue;
+      if (ARTE_ISO.aguaEn(L, T, (x + .5) * T, (y + .5) * T)) continue; libres.push([x, y]);
+    }
+    for (let i = 0; i < C.vetas.porZona && libres.length; i++) {
+      const [x, y] = libres.splice(floor(rnd() * libres.length), 1)[0];
+      for (let j = libres.length - 1; j >= 0; j--) if (abs(libres[j][0] - x) + abs(libres[j][1] - y) < 6) libres.splice(j, 1);
+      vetas.push({ tx: x, ty: y, id: clave + ':' + i, agotada: !!prog.vetas[clave + ':' + i] });
+    }
+  }
+  const picoActual = () => prog.picos?.damasco ? 'damasco' : prog.picos?.pico ? 'pico' : null;
+  function picar(v) {
+    const C = CB(), p = picoActual();
+    if (!p) { decir('Necesitas un pico. El kappa los vende.', 2.4); pitido(150, .15, 'square', .4); return; }
+    const P = C.picos[p], tabla = { ...P.tabla }; if (C.vetas.profundas.includes(zonaId)) tabla.jade *= C.vetas.jadeZonaProfunda;
+    const m = sortearMena(tabla), n = Math.random() < P.extra ? 2 : 1;
+    prog.menas = prog.menas || {}; prog.menas[m] = (prog.menas[m] || 0) + n; v.agotada = true; prog.vetas[v.id] = true; contar('minado'); guardarProg();
+    temblor = .15; [300, 360, 900].forEach((f, i) => setTimeout(() => pitido(f, .08, i < 2 ? 'square' : 'triangle', .5), i * 110));
+    efectos.push({ tipo: 'polvo', x: (v.tx + .5) * T, y: (v.ty + .5) * T, t: .5, dur: .5, r: .8 * T });
+    medalla({ icono: C.minerales[m].icono, tipo: 'Has picado', nombre: C.minerales[m].nombre + (n > 1 ? ' ×2' : ''), sub: 'Refínalo en la fragua' });
+  }
+  function dibujaVeta(v) {
+    const x = (v.tx + .5) * T, y = (v.ty + .5) * T, s = T / 24;
+    elip(x, y + 5 * s, 10 * s, 3.4 * s, 'rgba(0,0,0,.28)');
+    poli([x - 10 * s, y + 5 * s, x - 8 * s, y - 6 * s, x - 2 * s, y - 11 * s, x + 6 * s, y - 9 * s, x + 10 * s, y - 1 * s, x + 9 * s, y + 5 * s], v.agotada ? '#6a6458' : '#7d7466');
+    poli([x - 8 * s, y - 6 * s, x - 2 * s, y - 11 * s, x + 6 * s, y - 9 * s, x + 1 * s, y - 5 * s], v.agotada ? '#857e70' : '#9a9080');
+    if (!v.agotada) for (const [a, b, c] of [[-4, -3, '#c8743a'], [3, -5, '#e0e4ea'], [5, 1, '#4fb88a'], [-1, 2, '#c8743a']]) { const k = .6 + Math.sin(reloj * 4 + a) * .4; circ(x + a * s, y + b * s, 1.3 * s, c); circ(x + a * s - .4 * s, y + b * s - .4 * s, .5 * s, 'rgba(255,255,255,' + k + ')'); }
+    if (!v.agotada && cerca && cerca.veta === v) placaMundo(x, y - 16 * s, 'VETA', picoActual() ? 'Pica' : 'Sin pico', 60);
+  }
+
   // ---------- v0.61 COFRES por el mapa (ajustes y premios en config.js > cofres) ----------
   let cofres = [], cofreAbierto = null;
   const hoy = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
@@ -1740,6 +1972,7 @@
   }
   function actualizarAldea() {
     const tx = floor(h.x / T), ty = floor(h.y / T), z = zona();
+    contarPasoPelea(); if (fase === 'combate') return;
     const vecinos = z ? MUNDO.personajes : ALDEA.personajes;
     for (const o of L.objetos) if (objetoVisible(o) && cercaCasilla([o.tx,o.ty],.68)) {
       prog.items[o.id] = true; guardarProg(); SON.coger();
@@ -1755,6 +1988,7 @@
     cerca = null;
     if(alAlcance(TALLER.tronco)&&prog.troncoPDV>0){cerca={tronco:true};return;}
     if (fase === 'aldea') { const c = cofres.find(c => !c.abierto && cercaCasilla([c.tx, c.ty], 1.15)); if (c) { cerca = { cofre: c }; return; } }
+    if (fase === 'aldea') { const v = vetas.find(v => !v.agotada && cercaCasilla([v.tx, v.ty], 1.15)); if (v) { cerca = { veta: v }; return; } }
     if(ZU()&&estaEnPueblo()){const p=ZU().puesto;if(hypot((p.x+p.ancho/2)*T-h.x,(p.y+p.fondo/2)*T-h.y)<T*(1.1+Math.max(p.ancho,p.fondo)/2)){cerca={zumos:true};return;}}
     if(alAlcance(TALLER.puesto)){cerca={ruleta:true};return;}
     const paso = pasosMundo().find(p => cercaCasilla(p));
@@ -1790,10 +2024,10 @@
       fin = () => { prog.m[n.id] = 'activa'; if(prog.guia!==false)prog.guia=n.id; actualizarGuia(); guardarProg(); };
     } else if (st === 'activa' && prog.items[n.id]) {
       const arma = armas()[M.premio], xp = M.xp || 40, oro = M.monedas || 22;
-      lineas = [...M.gracias, '+' + oro + ' monedas · +' + xp + ' XP' + (arma ? ' · ' + arma.nombre : '')];
+      lineas = [...M.gracias];   // v0.67: el premio sale como medalla, no como texto
       fin = () => {
         const nivelAntes = nivelDe(prog.xp);
-        prog.m[n.id] = 'hecha'; contar('misiones'); if(prog.guia===n.id)prog.guia=null; actualizarGuia(); ganarXP(xp); prog.puntos += oro;
+        prog.m[n.id] = 'hecha'; medalla({ icono: '印', tipo: 'Misión cumplida', nombre: M.titulo || M.nombreObjeto, sub: '◈ ' + oro + '   ✦ ' + xp + ' XP' + (arma ? '   ⚔ ' + arma.nombre : ''), mision: true }); contar('misiones'); if(prog.guia===n.id)prog.guia=null; actualizarGuia(); ganarXP(xp); prog.puntos += oro;
         if (arma && !prog.armas.includes(M.premio)) prog.armas.push(M.premio);
         if (arma && !prog.arma) prog.arma = M.premio;
         if (!prog.huevo && misiones().every(([id]) => prog.m[id] === 'hecha')) {
@@ -1827,6 +2061,7 @@
       if (cerca.tronco) golpearTronco();
       else if (cerca.ruleta) { panelMundo='ruleta'; pintarUI(); aconsejar('ruleta'); }
       else if (cerca.cofre) { abrirCofre(cerca.cofre); cerca = null; }
+      else if (cerca.veta) { picar(cerca.veta); cerca = null; }
       else if (cerca.zumos) { const Z = ZU(), pe = Z.precioEntrada || 0, pobre = prog.puntos < pe; dlg = { nombre: Z.vendedora, lineas: pobre ? [(Z.sinDinero || 'La entrada son {p} monedas. Vuelve cuando las tengas, miau.').replace('{p}', pe)] : [...Z.frasesEntrada, ...(pe ? ['La entrada son ' + pe + ' monedas. Tienes ' + prog.puntos + '. ¡Que no se te caiga nada!'] : [])], i: 0, fin: pobre ? null : empezarFruta, retrato: Z.retrato && (arteIntegrado[Z.retrato] || Z.retrato) }; pitido(880, .08, 'triangle', .4); pintarDlg(); }
       else if (cerca.npc) hablar(cerca.npc);
       else if (cerca.paso) {
@@ -1842,7 +2077,10 @@
   }
   // espectro al que puedes cortar por la espalda ahora mismo (o null)
   function objetivoCorte() {
-    const A = armas().asesinato; if (!A || !prog.armas.includes('asesinato') || fase !== 'jugando' || cdCorte > 0) return null; const R2 = (A.radio || 1.7) * T;
+    const A = armas().asesinato; if (!A || !prog.armas.includes('asesinato') || fase !== 'jugando' || cdCorte > 0) return null;
+    // v0.67: sin arma equipada no se puede EJECUTAR; cuanto más Ataque tenga el arma, desde más lejos (config.js > armas.asesinato.alcancePorAtaque)
+    if (!prog.equipo?.arma || esVillano()) return null;
+    const R2 = (A.radio || 1.7) * T * (1 + atributo('ataque') * (A.alcancePorAtaque ?? .025));
     let o = null, md = R2; for (const e of espectros) { const d = hypot(e.x - h.x, e.y - h.y); if (!(e.muerto > 0) && d < md) { md = d; o = e; } }
     return o && abs(difAng(Math.atan2(h.y - o.y, h.x - o.x), o.dir)) >= PI * (A.angulo ?? 0.5) ? o : null;
   }
@@ -1865,15 +2103,17 @@
     guardarProg(); etiquetaAccion = ''; decir((armas()[prog.arma] || {}).nombre || prog.arma, 1.6); pitido(700, .05, 'triangle', .4);
   }
   function usarArma() {
-    const A = armas()[prog.arma]; if (!A || (L.exterior && prog.arma === 'shuriken') || armaCd > 0 || tp || susto > 0) return;
-    armaCd = (A.espera || 20) * (1 - .15 * (prog.temples[prog.arma] || 0)); const R2 = (A.radio || 3) * T, cer = e => hypot(e.x - h.x, e.y - h.y) < R2, tx = floor(h.x / T), ty = floor(h.y / T);
+    const A = armas()[prog.arma]; if (!A || (L.exterior && prog.arma === 'shuriken') || (cds[prog.arma]||0) > 0 || tp || susto > 0) return;
+    cds[prog.arma] = (A.espera || 20) * (1 - .15 * (prog.temples[prog.arma] || 0)); const R2 = (A.radio || 3) * T, cer = e => hypot(e.x - h.x, e.y - h.y) < R2, tx = floor(h.x / T), ty = floor(h.y / T);
     if (prog.arma === 'humo') { h.oculto = A.duracion; efectos.push({ tipo: 'humo', t: A.duracion, dur: A.duracion }); ruido(0.5, 1200, 1.4, .7); for (const e of espectros) if (cer(e) && e.estado !== 'patrulla') { e.estado = 'busca'; e.ruta = []; e.tEspera = 2; } }
-    else if (prog.arma === 'senuelo') { efectos.push({ tipo: 'campana', x: h.x, y: h.y, t: A.duracion, dur: A.duracion }); [0, 220, 440].forEach(d => setTimeout(() => pitido(1568, 0.3, 'sine', .7), d)); for (const e of espectros) if (cer(e)) { e.estado = 'busca'; e.ruta = []; irA(e, tx, ty); e.tEspera = A.duracion; e.distraido = A.duracion; } }
+    else if (prog.arma === 'senuelo') {   // v0.67: toca cualquier punto del dojo para lanzar la campana (si no tocas en 4 s, cae a tus pies)
+      apuntaCampana = 4; decir('Toca dónde lanzar la campana', 4);
+    }
     else if (prog.arma === 'paraguas') { h.oculto = A.duracion; h.paraguas = A.duracion; pitido(300, 0.15, 'triangle', .6, 600); }
     else if (prog.arma === 'asesinato') {
       let o = null, md = R2; for (const e of espectros) { const d = hypot(e.x - h.x, e.y - h.y); if (!(e.muerto > 0) && d < md) { md = d; o = e; } }
-      if (!o) { armaCd = 1.5; decir('No hay nadie a tiro', 1.5); return; }
-      if (abs(difAng(Math.atan2(h.y - o.y, h.x - o.x), o.dir)) < PI * 0.6) { armaCd = 4; decir('¡Solo por la espalda!', 2); o.estado = 'persigue'; o.vista = [tx, ty]; o.tMem = 2; SON.alerta(); return; }
+      if (!o) { cds[prog.arma] = 1.5; decir('No hay nadie a tiro', 1.5); return; }
+      if (abs(difAng(Math.atan2(h.y - o.y, h.x - o.x), o.dir)) < PI * 0.6) { cds[prog.arma] = 4; decir('¡Solo por la espalda!', 2); o.estado = 'persigue'; o.vista = [tx, ty]; o.tMem = 2; SON.alerta(); return; }
       o.muerto = A.duracion; o.estado = 'patrulla'; o.ruta = []; temblor = .3; SON.atrapado();
       for (let i = 0; i < 26; i++) manchas.push({ x: o.x + azar(-18, 18), y: o.y + azar(-12, 14), r: azar(1.5, 5.5), v: 16, v0: 16 });
       for (let i = 0; i < 40; i++) { const a = azar(0, 2 * PI), v = azar(30, 150); gotas.push({ x: o.x, y: o.y - 20, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 50, t: azar(0.3, 0.8) }); }
@@ -1889,7 +2129,7 @@
         const ax = tx + ddx * (kk + mm), ay = ty + ddy * (kk + mm), ok = ax > 0 && ay > 0 && ax < L.cols - 1 && ay < L.rows - 1 && mm <= maxM && !solido(ax, ay);
         dx = ddx; dy = ddy; k = kk; muros = mm; lx = ax; ly = ay; dentro = ok; if (ok) break;
       }
-      if (k > 4 || !muros || muros > maxM || !dentro || solido(lx, ly)) { armaCd = 1; decir(muros > maxM ? 'Pared demasiado gruesa' : 'Aquí no hay por dónde colarse', 1.5); return; }
+      if (k > 4 || !muros || muros > maxM || !dentro || solido(lx, ly)) { cds[prog.arma] = 1; decir(muros > maxM ? 'Pared demasiado gruesa' : 'Aquí no hay por dónde colarse', 1.5); return; }
       const px = tx + dx * (k - 1), py = ty + dy * (k - 1);
       if (h.carga.length) {   // la reliquia choca con la pared y se queda en el suelo, de tu lado
         for (const gm of h.carga) { gm.estado = 'suelo'; gm.tx = px; gm.ty = py; }
@@ -1905,8 +2145,8 @@
     if (btnLanzar) btnLanzar.classList.toggle('on', fase === 'jugando' && !esVillano() && !!h?.carga?.length && !dlg);
     let et = null, apagado = false;
     if (!ceremonia && !dlg && !tienda && !panelMundo && !esVillano()) {
-      if (fase === 'jugando' && armas()[prog.arma] && prog.arma !== 'asesinato') { const A = armas()[prog.arma]; apagado = armaCd > 0 || (L.exterior && prog.arma === 'shuriken'); et = (A.boton || 'USAR') + (armaCd > 0 ? ' ' + Math.ceil(armaCd) : prog.arma === 'asesinato' && objetivoCorte() ? ' ✓' : ''); }
-      if (fase === 'aldea' && cerca) et = cerca.tronco ? (armaDePractica()?'GOLPEAR':'SIN ARMA') : cerca.ruleta ? 'RULETA' : cerca.zumos ? 'ZUMOS' : cerca.cofre ? 'ABRIR' : cerca.npc ? 'HABLAR' : cerca.forja ? 'TEMPLAR' : cerca.paso ? 'VIAJAR' : cerca.sello !== undefined ? 'ENCENDER' : 'ENTRAR';
+      if (fase === 'jugando' && armas()[prog.arma] && prog.arma !== 'asesinato') { const A = armas()[prog.arma]; apagado = (cds[prog.arma]||0) > 0 || (L.exterior && prog.arma === 'shuriken'); et = (A.boton || 'USAR') + ((cds[prog.arma]||0) > 0 ? ' ' + Math.ceil((cds[prog.arma]||0)) : prog.arma === 'asesinato' && objetivoCorte() ? ' ✓' : ''); }
+      if (fase === 'aldea' && cerca) et = cerca.tronco ? (armaDePractica()?'GOLPEAR':'SIN ARMA') : cerca.ruleta ? 'RULETA' : cerca.zumos ? 'ZUMOS' : cerca.cofre ? 'ABRIR' : cerca.veta ? 'PICAR' : cerca.npc ? 'HABLAR' : cerca.forja ? 'TEMPLAR' : cerca.paso ? 'VIAJAR' : cerca.sello !== undefined ? 'ENCENDER' : 'ENTRAR';
 
     }
     const clave = et + '|' + apagado; if (clave === etiquetaAccion) return; etiquetaAccion = clave;
@@ -1914,7 +2154,7 @@
   }
 
   function dibujaAldeano(n) {
-    const s = T / 24, p = n.p, x = (n.tx + .5) * T, y = (n.ty + .5) * T, C = col(), k = p.tipo === 'nina' ? .8 : 1, bob = Math.sin(reloj * 2 + n.tx) * .5;
+    const s = T / 24, p = n.p, x = (n.tx + .5) * T, y = (n.ty + .5) * T, C = col(), k = p.tipo === 'nina' ? .8 : (p.escala || 1), bob = Math.sin(reloj * 2 + n.tx) * .5;
     const im = estampas[p.sprite];
     if (im?.naturalWidth) {
       const alto = p.alto * T, ancho = alto * im.naturalWidth / im.naturalHeight;
@@ -2061,6 +2301,11 @@
     for (const k in (Tn.mejoras || {})) { const m = Tn.mejoras[k], n = niv(k); o += fila(m.nombre, '●'.repeat(n) + '○'.repeat(Math.max(0, pr.length - n)), m.desc, n >= pr.length ? '<em>MÁX</em>' : bot('mejora:' + k, pr[n])); }
     o += '<h3>Pergaminos</h3>';
     for (const id in armas()) { const A = armas()[id]; if (A.precio == null) continue; o += fila(A.nombre, '', A.desc, prog.armas.includes(id) ? '<em>TUYO</em>' : bot('arma:' + id, A.precio)); }
+    if (CB()) {   // v0.69: picos para las vetas y té verde para los combates
+      o += '<h3>Herramientas y té</h3>';
+      for (const [id, P] of Object.entries(CB().picos)) o += fila(P.nombre, '', P.desc, prog.picos?.[id] ? '<em>TUYO</em>' : (id === 'damasco' && !prog.picos?.pico) ? '<em>antes el de hierro</em>' : bot('pico:' + id, P.precio));
+      o += fila(CB().te.nombre, 'tienes ' + (prog.tes || 0), CB().te.desc, bot('te:1', CB().te.precio));
+    }
     o += htmlMercado();
     for (const id in (CONFIG.tecnicas || {})) { const Tc = CONFIG.tecnicas[id]; o += fila(Tc.nombre, 'técnica', Tc.desc, tieneTecnica(id) ? '<em>APRENDIDA</em>' : bot('tecnica:' + id, Tc.precio)); }
     return o + `<button class="rq-b" data-a="cerrarTienda">SALIR</button>
@@ -2072,11 +2317,15 @@
     if (tipo === 'mejora') { if (niv(id) >= pr.length) return; precio = pr[niv(id)]; }
     else if (tipo === 'arma') precio = (armas()[id] || {}).precio || 0;
     else if (tipo === 'tecnica') { if (tieneTecnica(id)) return; precio = ((CONFIG.tecnicas || {})[id] || {}).precio || 0; }
+    else if (tipo === 'pico') { if (prog.picos?.[id]) return; precio = CB().picos[id].precio; }
+    else if (tipo === 'te') precio = CB().te.precio;
     else return;
     if (prog.puntos < precio) return;
     prog.puntos -= precio;
     if (tipo === 'mejora') prog.mejoras[id] = niv(id) + 1;
     else if (tipo === 'arma') { if (!prog.armas.includes(id)) prog.armas.push(id); prog.arma = id; }
+    else if (tipo === 'pico') { prog.picos = prog.picos || {}; prog.picos[id] = true; decir('¡' + CB().picos[id].nombre + '! Busca vetas brillantes en el mundo', 3); }
+    else if (tipo === 'te') prog.tes = (prog.tes || 0) + 1;
     else if (tipo === 'tecnica') { prog.tecnicas = prog.tecnicas || {}; prog.tecnicas[id] = true; decir('Aprendido: ' + CONFIG.tecnicas[id].nombre, 2.4); }
     guardarProg(); SON.entregar(); pintarUI();
   }
@@ -2677,16 +2926,31 @@
     }
     L.arboles=L.arboles.filter(([x,y])=>!L.monumentos.some(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.y+m.h));
   }
+  // v0.67: de un toque en pantalla a una casilla del mapa (deshace la proyección isométrica)
+  let camIso = null, apuntaCampana = 0;
+  function toqueACasilla(ev) {
+    if (!camIso || !camIso.camera) return null;
+    const [ux, uy] = aUnidades(ev), X = ux + camIso.camera[0], Y = uy + camIso.camera[1], ax = .88, ay = .44;
+    const x = (X / ax + Y / ay) / 2, y = (Y / ay - X / ax) / 2;
+    return [floor(x / T), floor(y / T)];
+  }
+  function soltarCampana(tx, ty) {
+    const A = armas().senuelo || {}; apuntaCampana = 0;
+    efectos.push({ tipo: 'campana', x: (tx + .5) * T, y: (ty + .5) * T, t: A.duracion, dur: A.duracion }); [0, 220, 440].forEach(d => setTimeout(() => pitido(1568, 0.3, 'sine', .7), d));
+    // TODOS los espectros del dojo van hacia la campana
+    for (const e of espectros) if (!(e.muerto > 0)) { e.estado = 'busca'; e.ruta = []; irA(e, tx, ty); e.tEspera = A.duracion; e.distraido = A.duracion; }
+    decir('¡La campana suena! Todos van hacia ella', 2); contar('campanas');
+  }
   function dibujaMundo() {
     if(!L||!h)return;
     const z=L.exterior?zona():null;
     const foco=esVillano()&&espectros[sel]?espectros[sel]:h;
-    ARTE_ISO.render({g,L,T,IW,AH,clock:reloj,region:zonaId,images:estampas,h,foco,shake:temblor,
+    camIso=ARTE_ISO.render({g,L,T,IW,AH,clock:reloj,region:zonaId,images:estampas,h,foco,shake:temblor,
       buildings:ALDEA.edificios,landmarks:L.monumentos,enemies:espectros,gems:gemas,thrown:lanzadas,boosts:turbos,portals:portales,
       heroVisible:fase!=='menu'&&!(esVillano()&&!heroVisto()),
       exits:L.exterior?pasosMundo():[],torii:z?.torii,
       treasures:z?.tesoros.filter((p,i)=>!prog.tesoros[zonaId+':'+i]),seals:z?.sellos?.map((p,i)=>[...p,!!prog.sellos[i]]),forge:z?.forja,
-      guide:guiaActual,workshop:TALLER,props:(fase==='aldea'?[...cofres.map(c=>({x:(c.tx+.5)*T,y:(c.ty+.5)*T,f:()=>dibujaCofre(c)})),...(((CONFIG.decoracion||{}).faroles||{})[zonaId]||[]).map(p=>({x:(p[0]+.5)*T,y:(p[1]+.5)*T,f:()=>dibujaFarolDecor(p)}))]:torre?[...torre.faro.map(f=>({x:(f.tx+.5)*T,y:(f.ty+.5)*T,f:()=>dibujaFarolillo(f)})),...(pareja&&pareja.otro?[{x:pareja.otro.x,y:pareja.otro.y,esc:.8,f:dibujaCompa}]:[])]:[]),goal:torre?progresoTorre().split(' · ')[1]:expedicion?gemasPiso+' / '+(ronda+1)+' gemas':puntos+' puntos',
+      guide:guiaActual,workshop:TALLER,props:(fase==='aldea'?[...cofres.map(c=>({x:(c.tx+.5)*T,y:(c.ty+.5)*T,f:()=>dibujaCofre(c)})),...vetas.map(v=>({x:(v.tx+.5)*T,y:(v.ty+.5)*T,f:()=>dibujaVeta(v)})),...(((CONFIG.decoracion||{}).faroles||{})[zonaId]||[]).map(p=>({x:(p[0]+.5)*T,y:(p[1]+.5)*T,f:()=>dibujaFarolDecor(p)}))]:torre?[...torre.faro.map(f=>({x:(f.tx+.5)*T,y:(f.ty+.5)*T,f:()=>dibujaFarolillo(f)})),...(pareja&&pareja.otro?[{x:pareja.otro.x,y:pareja.otro.y,esc:.8,f:dibujaCompa}]:[])]:[]),goal:torre?progresoTorre().split(' · ')[1]:expedicion?gemasPiso+' / '+(ronda+1)+' gemas':puntos+' puntos',
       idle:!h.mueve,dialogue:!!dlg,banter:chascarrillos,energy:h.corre||h.energia<energiaMax()*.93?Math.max(.001,h.energia/energiaMax()):0
     },{
       guia:()=>dibujaRutaGuia(0,0,L.cols,L.rows),
@@ -3626,7 +3890,7 @@
       if (R.calidadAutomatica !== false && ms > ignorarHasta && carga > (R.umbralMs || 14) && calidadDinamica > minimo) {
         if (++tandasLentas >= 2) { calidadDinamica = Math.max(minimo, calidadDinamica - .25); tandasLentas = 0; medir(); }
       } else tandasLentas = 0;
-      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.65 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
+      if (perfPanel.style.display !== 'none') perfPanel.textContent = 'Reliquias v0.69 | '+perfFPS+' FPS\nDPR '+Math.min(window.devicePixelRatio||1, calidadDinamica).toFixed(2)+' | update '+(perfUpdate/Math.max(1,perfMuestras)).toFixed(1)+' ms\nrender '+(perfRender/Math.max(1,perfMuestras)).toFixed(1)+' ms | audio '+(perfAudio/Math.max(1,perfMuestras)).toFixed(1)+' ms';
       perfInicio = ms; perfFrames = 0; perfLentos = 0; perfUpdate = perfRender = perfAudio = perfMuestras = 0;
     }
   }
@@ -3676,6 +3940,13 @@
   .rq-b{display:block;width:100%;margin-top:10px;padding:13px;font:inherit;font-weight:700;font-size:16px;letter-spacing:1px;border:0;border-radius:8px;background:#f2c94c;color:#1b1420;cursor:pointer}
   .rq-b.sec{background:#3a2e42;color:#fff}
   .rq-b:focus-visible,.rq-m:focus-visible,.rq-panel select:focus-visible{outline:3px solid #7fe0ff;outline-offset:2px}
+  .rq-minimenu{position:relative;pointer-events:auto;z-index:6}
+  .rq-emblema{cursor:pointer;width:46px!important;height:46px!important;padding:0!important;outline:none;border-radius:50%!important;display:grid;place-items:center;background:radial-gradient(circle at 40% 35%,#5a3a22,#24160c)!important;border:2px solid #b8873a!important;box-shadow:0 3px 10px #0008,inset 0 0 8px #0009;transition:transform .35s}
+  .rq-minimenu.abierto .rq-emblema{transform:rotate(45deg)}
+  .rq-mini-menu{position:absolute;z-index:20;top:52px;left:0;display:flex;flex-direction:column;gap:5px;opacity:0;transform:translateY(-8px) scale(.96);transform-origin:top left;pointer-events:none;transition:.2s}
+  .rq-minimenu.abierto .rq-mini-menu{opacity:1;transform:none;pointer-events:auto}
+  .rq-mini-menu button{display:flex;align-items:center;gap:9px;min-width:178px;padding:9px 14px;border-radius:22px;background:linear-gradient(#f3e4c2,#e2cfa3);border:2px solid #8a6238;color:#3a2414;font:bold 14px Georgia,serif;box-shadow:0 3px 8px #0007;cursor:pointer;text-align:left}
+  .rq-mini-menu button span{font-weight:normal}
   .rq-mandos{position:absolute;display:flex;flex-wrap:wrap;gap:4px;z-index:2;pointer-events:none}
   .rq-mandos button{pointer-events:auto}
   .rq-m.rq-camara{color:#ffe2a6;background:#382632;border:1px solid #ae815c}
@@ -3722,7 +3993,7 @@
   .rq-recurso.curio{max-width:270px;margin:auto}.rq-recurso p{font-size:12px}
   .rq-rueda i .rq-item-icon{width:28px;height:28px}.rq-lista .rq-item-icon{width:32px;height:32px}
   .rq-dlg.retrato-sprite img{object-fit:contain;object-position:center;mix-blend-mode:normal}
-  .rq-cab{display:flex;gap:12px;align-items:center;text-align:left}.rq-cab .rq-marco{width:84px;height:104px}.rq-cab h2{margin-bottom:4px}
+  .rq-cab{display:flex;gap:12px;align-items:center;text-align:left}.rq-cab .rq-marco{width:132px;height:164px}@media(max-width:520px){.rq-cab .rq-marco{width:112px;height:140px}}.rq-cab .rq-marco img{width:100%;height:100%;object-fit:cover;object-position:50% 20%}.rq-cab h2{margin-bottom:4px}
   @keyframes rqd{from{opacity:0;transform:translateX(-50%) translateY(14px)}}
   @media (max-width:520px){.rq-dlg.grande .rq-marco{width:104px;height:140px}.rq-dlg.grande p{font-size:14px}}
   @media (prefers-reduced-motion:reduce){.rq-dlg.grande{animation:none}}
@@ -3754,6 +4025,80 @@
   @keyframes ecoFragua{0%{filter:brightness(1.65);transform:scale(.98)}100%{filter:brightness(1);transform:scale(1)}}
   @media(prefers-reduced-motion:reduce){.rq-ritual{animation:none}}
   .rq-paisaje{display:block;width:100%;aspect-ratio:1.75;object-fit:cover;border-radius:5px;margin-bottom:10px}
+  /* v0.69 COMBATE POR TURNOS */
+  .rq-pelea{position:absolute;inset:0;z-index:55;display:flex;flex-direction:column;background:#0c0a08;font-family:Georgia,serif;color:#f6e7c4;user-select:none}
+  .rq-pl-escena{position:relative;flex:1;background:center 70%/cover no-repeat;overflow:hidden}
+  .rq-pl-escena::after{content:"";position:absolute;inset:0;background:linear-gradient(transparent 55%,#0008);pointer-events:none}
+  .rq-pl-escena.entra{animation:rqPlIn .7s ease-out}
+  .rq-pl-escena.tiembla{animation:rqPlTiembla .3s}
+  @keyframes rqPlIn{0%{filter:brightness(3) blur(6px);transform:scale(1.15)}100%{filter:none;transform:none}}
+  @keyframes rqPlTiembla{25%{transform:translate(-6px,3px)}50%{transform:translate(5px,-3px)}75%{transform:translate(-3px,2px)}}
+  .rq-pl-enes{position:absolute;right:3%;bottom:6%;width:62%;display:flex;justify-content:flex-end;align-items:flex-end;gap:2%;z-index:1}
+  .rq-pl-ene{position:relative;flex:0 1 33%;display:flex;flex-direction:column;align-items:center;transition:opacity .5s,filter .5s}
+  .rq-pl-ene img{width:100%;max-width:190px;max-height:34vh;object-fit:contain;filter:drop-shadow(0 8px 6px #0009);animation:rqRespira 2.6s ease-in-out infinite}
+  .rq-pl-ene:nth-child(2) img{animation-delay:-.9s}.rq-pl-ene:nth-child(3) img{animation-delay:-1.7s}
+  @keyframes rqRespira{50%{transform:translateY(-4px) scale(1.02)}}
+  .rq-pl-ene.golpe img{animation:rqGolpe .35s}
+  @keyframes rqGolpe{0%{filter:brightness(4) drop-shadow(0 0 0 #fff);transform:translateX(8px)}100%{filter:drop-shadow(0 8px 6px #0009)}}
+  .rq-pl-ene.carga img{filter:drop-shadow(0 0 14px #ff6a3a) drop-shadow(0 8px 6px #0009)}
+  .rq-pl-ene.prot img{filter:drop-shadow(0 0 12px #8ad8ff) drop-shadow(0 8px 6px #0009)}
+  .rq-pl-ene.muerto{opacity:0;filter:grayscale(1) blur(3px);pointer-events:none}
+  .rq-pl-int{min-height:22px;margin-bottom:4px;padding:2px 9px;border-radius:12px;background:#1d120ad9;border:1px solid #b8873a;font-size:12px;font-weight:bold;white-space:nowrap}
+  .rq-pl-int:empty{visibility:hidden}
+  .rq-pl-ficha{width:100%;max-width:170px;margin-top:4px;padding:4px 7px;border-radius:8px;background:#1d120ae6;border:1px solid #8a6238;box-sizing:border-box}
+  .rq-pl-ficha b{display:flex;align-items:center;gap:4px;font-size:11px;line-height:1.2}
+  .rq-pl-ficha b i{flex:none;display:grid;place-items:center;width:16px;height:16px;border-radius:50%;font-style:normal;font-size:10px;color:#fff}
+  .rq-pl-ficha b em{color:#ffd35a;font-style:normal;font-size:10px}
+  .rq-pl-ficha small{font-size:10px;opacity:.8}
+  .rq-pl-barra{height:7px;border-radius:4px;background:#000a;overflow:hidden;margin:3px 0 1px}
+  .rq-pl-barra span{display:block;height:100%;background:linear-gradient(#ff8a6a,#c0392b);transition:width .4s}
+  .rq-pl-barra.vida span{background:linear-gradient(#a8f07a,#3d8a2a)}
+  .rq-pl-diana{position:absolute;inset:0 0 40px;background:none;border:0;cursor:crosshair}
+  .rq-pl-heroe{position:absolute;left:4%;bottom:5%;width:30%;max-width:210px;display:flex;flex-direction:column;align-items:center;z-index:1}
+  .rq-pl-heroe img{width:72%;max-height:36vh;object-fit:contain;filter:drop-shadow(0 8px 6px #0009);transform:scaleX(1)}
+  .rq-pl-heroe.def img{filter:drop-shadow(0 0 14px #8ad8ff) drop-shadow(0 8px 6px #0009)}
+  .rq-pl-heroe.herido img{animation:rqHerido .35s}
+  @keyframes rqHerido{0%{filter:brightness(2) sepia(1) hue-rotate(-40deg) saturate(5)}100%{filter:drop-shadow(0 8px 6px #0009)}}
+  .rq-pl-esp{display:flex;gap:2px;margin-top:2px}.rq-pl-esp i{font-style:normal;font-size:12px;color:#5a4a30}.rq-pl-esp i.on{color:#ffd35a;text-shadow:0 0 6px #ffd35a}
+  .rq-pl-capa{position:absolute;inset:0;z-index:58;pointer-events:none;overflow:hidden}
+  .rq-pl-num{position:absolute;transform:translate(-50%,0);font:bold 26px Georgia,serif;text-shadow:0 2px 0 #000,0 0 8px #000;animation:rqNum .9s ease-out forwards}
+  @keyframes rqNum{0%{opacity:0;transform:translate(-50%,10px) scale(.6)}20%{opacity:1;transform:translate(-50%,-6px) scale(1.25)}100%{opacity:0;transform:translate(-50%,-46px) scale(1)}}
+  .rq-pl-panel{flex:none;padding:8px 10px max(10px,env(safe-area-inset-bottom));background:linear-gradient(#3a2414,#1d120a);border-top:3px solid #b8873a}
+  .rq-pl-log{margin:0 0 7px;min-height:2.6em;font-size:14px;font-style:italic;text-align:center}
+  .rq-pl-acc{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .rq-pl-acc button{display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 2px;border-radius:10px;border:2px solid #8a6238;background:linear-gradient(#f3e4c2,#d9c294);color:#3a2414;font:bold 13px Georgia,serif;cursor:pointer;box-shadow:0 3px 0 #5a3a22}
+  .rq-pl-acc button i{font-style:normal;font-size:20px;color:#a3241c}
+  .rq-pl-acc button.on{background:linear-gradient(#ffe9a8,#e2b04a)}
+  .rq-pl-acc button:active{transform:translateY(2px);box-shadow:0 1px 0 #5a3a22}
+  .rq-pelea button:disabled{opacity:.45;cursor:default}
+  .rq-pl-sub{display:grid;gap:5px;margin-bottom:7px}
+  .rq-pl-sub button{display:grid;grid-template-columns:30px 1fr;grid-template-rows:auto auto;align-items:center;text-align:left;padding:6px 10px;border-radius:9px;border:1px solid #b8873a;background:#2a1a0e;color:#f6e7c4;font:13px Georgia,serif;cursor:pointer}
+  .rq-pl-sub i{grid-row:span 2;font-style:normal;font-size:20px;color:#ffd35a}.rq-pl-sub small{opacity:.75;font-size:11px}
+  .rq-pl-fin{text-align:center}.rq-pl-fin h2{margin:4px 0;color:#ffd35a}.rq-pl-fin p{font-size:14px}
+  @media (orientation:landscape){.rq-pl-ene img{max-height:42vh}.rq-pl-heroe img{max-height:44vh}}
+  .rq-refino{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;margin-bottom:8px}
+  .rq-ref{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;padding:7px;border-radius:8px;background:#fbf2dc99;border:1px solid #a88a5c}
+  .rq-ref i{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;font-style:normal;font-weight:bold;color:#fff;box-shadow:inset 0 -3px 5px #0005}
+  .rq-ref small{font-size:10px;opacity:.8}
+  .rq-medalla{position:absolute;left:50%;top:max(54px,9vh);z-index:70;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px 18px 8px 8px;border-radius:44px;background:linear-gradient(#3a2414f2,#1d120af2);border:2px solid #d9a83e;box-shadow:0 6px 24px #000a,0 0 22px #f6c95c55;color:#f6e7c4;font-family:Georgia,serif;pointer-events:none;animation:rqMedIn .55s cubic-bezier(.2,1.6,.4,1)}
+  .rq-medalla.fuera{transition:.45s;opacity:0;transform:translate(-50%,-14px)}
+  .rq-medalla.mision{border-color:#c0392b;box-shadow:0 6px 24px #000a,0 0 22px #c0392b55}
+  .rq-med-disco{flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#ffe9a8,#d9a83e 55%,#8a5a1c);box-shadow:inset 0 -3px 6px #0006,0 0 0 3px #3a2414,0 0 0 5px #d9a83e}
+  .rq-medalla.mision .rq-med-disco{background:radial-gradient(circle at 35% 30%,#ff8a74,#c0392b 55%,#6e1a12);box-shadow:inset 0 -3px 6px #0006,0 0 0 3px #3a2414,0 0 0 5px #c0392b}
+  .rq-med-disco span{font:bold 27px Georgia,serif;color:#3a2006;text-shadow:0 1px 0 #fff6}
+  .rq-medalla.mision .rq-med-disco span{color:#fff3e0;text-shadow:0 1px 2px #0008}
+  .rq-med-txt small{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#f6c95c}
+  .rq-med-txt b{display:block;font-size:16px}
+  .rq-med-txt em{display:block;font-size:12px;opacity:.85}
+  @keyframes rqMedIn{from{opacity:0;transform:translate(-50%,-30px) scale(.6)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+  .rq-logros{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;margin:10px 0}
+  .rq-logro2{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:8px 6px;border-radius:8px;background:#fbf2dc99;border:1px solid #a88a5c}
+  .rq-logro2 .rq-med-disco{width:44px;height:44px}.rq-logro2 .rq-med-disco span{font-size:22px}
+  .rq-logro2.bloq .rq-med-disco{filter:grayscale(1) brightness(.75);opacity:.6}
+  .rq-logro2 b{font-size:12px;line-height:1.15}.rq-logro2 small{font-size:10px;opacity:.75;line-height:1.2}
+  .rq-logro2 i{display:block;width:80%;height:4px;border-radius:2px;background:linear-gradient(90deg,#d9a83e var(--p),#0002 var(--p))}
+  .rq-logro2 em{font-size:10px;color:#3d7a3a;font-style:normal}
+  .rq-logro2.listo{box-shadow:0 0 0 2px #d9a83e,0 0 12px #d9a83e88}
   .rq-epilogo{position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:radial-gradient(#1d2a2e,#07090c);cursor:pointer;padding:18px;box-sizing:border-box}
   .rq-ep-lamina{max-width:440px;text-align:center;color:#f6e7c4;font-family:Georgia,serif;animation:rqEp .9s ease-out}
   .rq-ep-lamina img{width:min(42vw,170px);aspect-ratio:1;object-fit:cover;border-radius:50%;border:3px solid #c9a15c;box-shadow:0 0 30px #8ae8ff44}
@@ -3970,7 +4315,8 @@
     }).join('');
     const nivel=nivelDe(prog.xp), siguiente=55*nivel*nivel;
     const ficha=[
-      ['Ataque',atributo('ataque'),'Potencia del arma en el cedro de entrenamiento'],
+      ['Ataque',atributo('ataque'),'Potencia del arma: cedro de entrenamiento, zumos y parada'],
+      ['Parada',prog.equipo?.arma?Math.round(Math.min((CONFIG.parada||{}).maximo??.35,atributo('ataque')*((CONFIG.parada||{}).porAtaque??.012))*100)+' %':'Equipa un arma','Probabilidad de desviar el golpe de un espectro'],
       ['Golpe al cedro',armaDePractica()?TALLER.dano(atributo('ataque'),false)+' / '+TALLER.dano(atributo('ataque'),true):'Equipa un arma','Daño normal / crítico'],
       ['Crítico','12 %','Probabilidad de crítico en el cedro'], 
       ['Velocidad',Math.round(CONFIG.heroe.velocidad*(1+efectoMejora('velocidad')+atributo('velocidad')/100))+' u/s','Velocidad al caminar'],
@@ -4009,7 +4355,7 @@
     const actual=prog.forjas[id] || {grado:0};
     const proximo=EQUIPO.grados[actual.grado];
     const disponible=!!proximo && prog.puntos>=proximo.monedas &&
-      (prog.materiales[proximo.material]||0)>0 && nivelDe(prog.xp)>=proximo.nivel;
+      (prog.materiales[proximo.material]||0)>=(proximo.cantidad||1) && nivelDe(prog.xp)>=proximo.nivel;
     return {arma,actual,proximo,disponible};
   }
   function iniciarRitual(id, juramento) {
@@ -4024,7 +4370,7 @@
     const estado=estadoForja(ritual.id);
     if (!estado?.disponible) { ritual=null; pintarUI(); return; }
     if (++ritual.paso === estado.proximo.pasos.length) {
-      prog.puntos-=estado.proximo.monedas; prog.materiales[estado.proximo.material]--;
+      prog.puntos-=estado.proximo.monedas; prog.materiales[estado.proximo.material]-=(estado.proximo.cantidad||1);
       prog.forjas[ritual.id]={grado:estado.actual.grado+1,juramento:ritual.juramento};
       recalcularEquipo(); guardarProg(); ritual.fin=true; SON.entregar();
       [196,294,392,587,784].forEach((f,i)=>setTimeout(()=>pitido(f,.45,'triangle',.58),i*100));
@@ -4032,7 +4378,10 @@
     pintarUI();
   }
   function htmlFragua() {
-    const encabezado='<img class="rq-paisaje" src="'+rutaArte('fragua-ancestral')+'" alt=""><h2>Fragua de los Tres Ecos</h2>';
+    const encabezado='<img class="rq-paisaje" src="'+(rutaCombate('forja-taller')||rutaArte('fragua-ancestral'))+'" alt=""><h2>Fragua de los Tres Ecos</h2>';
+    // v0.69: refinado: 3 menas en bruto + monedas = 1 lingote (los lingotes suben de grado las armas)
+    const C=CB(), refinado=C?'<h3>Refinar mineral</h3><div class="rq-refino">'+Object.entries(C.minerales).map(([k,m])=>{const tengo=(prog.menas||{})[k]||0,ok=tengo>=C.porLingote&&prog.puntos>=m.refinar;
+      return '<div class="rq-ref"><i style="background:'+m.color+'">'+m.icono+'</i><b>'+esc(m.nombre)+' ×'+tengo+'</b><small>'+C.porLingote+' → 1 '+esc(EQUIPO.materiales[m.lingote])+' · ◈ '+m.refinar+'</small><small>Lingotes: '+(prog.materiales[m.lingote]||0)+'</small><button class="rq-c" data-a="refinar" data-id="'+k+'"'+(ok?'':' disabled')+'>Refinar</button></div>';}).join('')+'</div>':'';
     if (ritual) {
       const e=estadoForja(ritual.id);
       const paso=ritual.paso;
@@ -4045,9 +4394,9 @@
       const juramentos=Object.entries(EQUIPO.juramentos).filter(([k])=>!actual.juramento||k===actual.juramento);
       const botones=juramentos.map(([k,j])=>'<button class="rq-b sec" data-a="iniciarRitual" data-id="'+id+'" data-juramento="'+k+'" '+(disponible?'':'disabled')+'>'+j.nombre+' · +'+j.valor+' '+EQUIPO.stats[j.atributo]+'</button>').join('');
       return '<h3>'+esc(o.nombre)+' · '+actual.grado+'/3</h3>'+
-        (proximo?'<p>'+proximo.nombre+' · '+proximo.monedas+' monedas · '+EQUIPO.materiales[proximo.material]+' ('+(prog.materiales[proximo.material]||0)+') · Nv. '+proximo.nivel+'</p>'+botones:'<p>El arma conoce su nombre verdadero.</p>');
+        (proximo?'<p>'+proximo.nombre+' · '+proximo.monedas+' monedas · '+(proximo.cantidad||1)+' × '+EQUIPO.materiales[proximo.material]+' (tienes '+(prog.materiales[proximo.material]||0)+') · +'+(proximo.ataque||0)+' Ataque · Nv. '+proximo.nivel+'</p>'+botones:'<p>El arma conoce su nombre verdadero.</p>');
     }).join('');
-    return encabezado+'<p>El primer juramento da forma a todos los temples del arma. Cada eco exige un material de las plantas del Dojo.</p>'+ (opciones || '<p>Consigue un arma en el cofre de la primera planta.</p>')+cerrarPanel();
+    return encabezado+'<p>Pica vetas en el mundo, refina el mineral aquí y usa los lingotes para subir de grado tu arma: más Ataque en combate, más parada y más alcance al ejecutar.</p>'+refinado+'<h3>Subir de grado</h3>'+(opciones || '<p>Consigue un arma venciendo a los jefes de la Torre del Dojo.</p>')+cerrarPanel();
   }
 
   function pintarUI() {
@@ -4153,7 +4502,7 @@
       '<button class="rq-c" data-a="alternarGuia">'+(prog.guia===false?'Activar guía':'Ocultar guía')+'</button></div>';
     const rutas = pasosMundo().map(p => '<li>' + esc(nombreZona(p[2])) + (abierto(p) ? ' · ' + (p[1] < L.rows/3 ? 'norte' : p[1] > L.rows*2/3 ? 'sur' : p[0] < L.cols/2 ? 'oeste' : 'este') : ' · cerrado') + '</li>').join('');
     const nLog = logrosPorCobrar();
-    return '<h2>Diario del viajero</h2><p>' + esc(rango().nombre) + ' · nivel ' + nivelDe(prog.xp) + ' · ' + prog.xp + ' XP · ◈ ' + prog.puntos + ' monedas</p>' + (EC() ? '<button class="rq-b" data-a="verLogros">🏮 Recompensas' + (nLog ? ' · ' + nLog + ' por cobrar' : '') + '</button>' : '') + cabGuia + '<h3>Misiones</h3><ul class="rq-lista">' + tareas + '</ul>' + aliados +
+    return '<h2>Diario del viajero</h2><p>' + esc(rango().nombre) + ' · nivel ' + nivelDe(prog.xp) + ' · ' + prog.xp + ' XP · ◈ ' + prog.puntos + ' monedas</p>' + (EC() ? '<button class="rq-b sec" data-a="verLogros">賞 Logros' + (nLog ? ' · ' + nLog + ' por cobrar' : '') + '</button>' : '') + cabGuia + '<h3>Misiones</h3><ul class="rq-lista">' + tareas + '</ul>' + aliados +
       (prog.huevo ? '<p>Huevo de jade · ' + prog.cargaJade + '/4 hacia el próximo bloqueo</p><button class="rq-b sec" data-a="verJade">Volver a ver la entrega</button>' : '') +
       '<h3>Salidas desde ' + esc(L.nombre) + '</h3><ul class="rq-lista">' + rutas + '</ul>' + cerrar;
   }
@@ -4188,6 +4537,7 @@
   // v0.61: regalo de pruebas (config.js > regaloPruebas). Se da una sola vez por versión del regalo
   function regaloPruebas() {
     const R = CONFIG.regaloPruebas; if (!R || !prog || prog.regaloVisto === R.version) return;
+    for (const id of R.objetos || []) prog.inventario[id] = 1; if (R.huevo) { prog.huevo = true; prog.inventario.dofus = 1; } recalcularEquipo();
     prog.fichas += R.fichas || 0; prog.puntos += R.monedas || 0; for (const a of R.armas || []) if (!prog.armas.includes(a)) prog.armas.push(a); if ((R.armas || []).length && !prog.arma) prog.arma = R.armas[1] || R.armas[0]; prog.regaloVisto = R.version; guardarProg();
     setTimeout(() => decir('Regalo de pruebas: +' + (R.fichas || 0) + ' fichas y +' + (R.monedas || 0).toLocaleString('es') + ' monedas', 4), 2500);
   }
@@ -4200,7 +4550,8 @@
     g = ctx;
     joyBase = document.createElement('div'); joyBase.className = 'rq-joy base'; joyPomo = document.createElement('div'); joyPomo.className = 'rq-joy pomo';
     mandos = document.createElement('div'); mandos.className = 'rq-mandos';
-    mandos.innerHTML = '<button class="rq-m" data-a="opciones" aria-label="Ajustes"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7zm8.4 2.3l-1.9-.4a6.9 6.9 0 00-.7-1.7l1.1-1.6-1.9-1.9-1.6 1.1c-.5-.3-1.1-.6-1.7-.7L13.3 3h-2.6l-.4 1.9c-.6.1-1.2.4-1.7.7L7 4.5 5.1 6.4l1.1 1.6c-.3.5-.6 1.1-.7 1.7l-1.9.4v2.6l1.9.4c.1.6.4 1.2.7 1.7l-1.1 1.6 1.9 1.9 1.6-1.1c.5.3 1.1.6 1.7.7l.4 1.9h2.6l.4-1.9c.6-.1 1.2-.4 1.7-.7l1.6 1.1 1.9-1.9-1.1-1.6c.3-.5.6-1.1.7-1.7l1.9-.4z" fill="currentColor"/></svg></button><button class="rq-m" data-a="pausa" aria-label="Pausa">Ⅱ</button><button class="rq-m" data-a="silencio" aria-label="Sonido">♪</button><button class="rq-m" data-a="completa" aria-label="Pantalla completa">⛶</button>';
+    // v0.68: un solo emblema (mon de ocho pétalos) que abre un minimenú con ajustes, pausa, sonido y pantalla completa
+    mandos.innerHTML = '<div class="rq-minimenu"><button class="rq-emblema" data-a="minimenu" aria-label="Menú" aria-expanded="false"><svg viewBox="0 0 48 48" width="30" height="30" aria-hidden="true"><defs><radialGradient id="rqOro" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#fff2b8"/><stop offset=".5" stop-color="#e2b04a"/><stop offset="1" stop-color="#8a5a1c"/></radialGradient></defs><g fill="url(#rqOro)" stroke="#3a2006" stroke-width="1.2">'+[0,45,90,135,180,225,270,315].map(a=>'<ellipse cx="24" cy="10" rx="5.2" ry="7.5" transform="rotate('+a+' 24 24)"/>').join('')+'</g><circle cx="24" cy="24" r="10.5" fill="#3a2414" stroke="#e2b04a" stroke-width="2"/><circle cx="24" cy="24" r="4.2" fill="url(#rqOro)" stroke="#3a2006" stroke-width="1"/></svg></button><div class="rq-mini-menu"><button data-a="opciones">⚙ <span>Ajustes</span></button><button data-a="pausa">Ⅱ <span>Pausa</span></button><button data-a="silencio">♪ <span>Sonido</span></button><button data-a="completa">⛶ <span>Pantalla completa</span></button></div></div>';
     btnSprint = document.createElement('button'); btnSprint.className = 'rq-sprint'; btnSprint.textContent = 'SPRINT'; btnSprint.setAttribute('aria-label', 'Sprint');
     ui = document.createElement('div'); ui.className = 'rq-ui';
     btnAccion = document.createElement('button'); btnAccion.className = 'rq-accion'; btnAccion.dataset.a = 'accion';
@@ -4227,7 +4578,7 @@
     escenaJade.setAttribute('role','dialog'); escenaJade.setAttribute('aria-modal','true'); escenaJade.setAttribute('aria-label','Huevo de jade obtenido');
     escenaJade.innerHTML = '<button class="rq-m ancho" data-a="cerrarJade">Saltar</button>';
     cont.append(joyBase, joyPomo, mandos, btnSprint, btnLanzar, btnCambiar, btnCorte, btnAccion, dlgEl, ui, escenaJade);
-    etiquetaAccion = null; leerProg(); regaloPruebas(); setTimeout(() => { if (jugador) iniciarRed(); }, 1200);
+    etiquetaAccion = null; leerProg(); prog.armas = prog.armas.filter(a => armas()[a]); if (!armas()[prog.arma]) prog.arma = prog.armas[0] || ''; regaloPruebas(); setTimeout(() => { if (jugador) iniciarRed(); }, 1200);
     if (window.matchMedia && matchMedia('(pointer:coarse)').matches) cont.classList.add('tactil');
 
     // botones
@@ -4236,6 +4587,7 @@
 
       const cp = ev.target.closest('[data-compra]'); if (cp) { comprar(cp.dataset.compra); return; }
       const b = ev.target.closest('[data-a]'); if (!b) return;
+      if (b.closest('.rq-mini-menu')) b.closest('.rq-minimenu').classList.remove('abierto');   // cierra el minimenú al elegir
       const a = b.dataset.a;
       if (a === 'entrar') { const i = ui.querySelector('[data-nombre]'), n = (i.value || '').trim().slice(0, 14); if (!n) { i.focus(); return; } jugador = n; try { localStorage.setItem('reliquias-jugador', n); } catch (e) { } irAldea(); }
       else if (a === 'nombre') { jugador = ''; pintarUI(); }
@@ -4271,6 +4623,8 @@
       else if (a === 'tiendaRonda') { tienda = true; const P = (hayAldea() && ALDEA.personajes) || {}; retratoTienda = ''; for (const k in P) if (P[k].tienda) retratoTienda = P[k].sprite ? rutaArte(P[k].sprite) : P[k].retrato || ''; pintarUI(); }
       else if (a === 'camara' && esVillano()) siguienteCamara();
       else if (a === 'accion') accion();
+      else if (a === 'refinar') { const C = CB(), m = C.minerales[b.dataset.id]; if (m && (prog.menas?.[b.dataset.id] || 0) >= C.porLingote && prog.puntos >= m.refinar) { prog.menas[b.dataset.id] -= C.porLingote; prog.puntos -= m.refinar; prog.materiales[m.lingote] = (prog.materiales[m.lingote] || 0) + 1; contar('refinado'); guardarProg(); [392, 523, 784].forEach((f, i) => setTimeout(() => pitido(f, .2, 'triangle', .5), i * 90)); decir('+1 ' + EQUIPO.materiales[m.lingote], 2); pintarUI(); } }
+      else if (a === 'minimenu') { const m = b.closest('.rq-minimenu'); m.classList.toggle('abierto'); b.setAttribute('aria-expanded', m.classList.contains('abierto')); }
       else if (a === 'seguir' || a === 'pausa') pausar();
       else if (a === 'opciones') { opciones = !opciones; if (opciones && fase === 'jugando') { fase = 'pausa'; opciones = 'pausa'; } else if (!opciones && fase === 'pausa') fase = 'jugando'; pintarUI(); }
       else if (a === 'cartaTorre' && torre) elegirCarta(b.dataset.id);
@@ -4325,6 +4679,11 @@
       if (ev.pointerType === 'touch') cont.classList.add('tactil');
       Banda.reanudar();
       if (ceremonia || panelMundo || tienda) return;
+      if (apuntaCampana > 0 && fase === 'jugando' && !ev.target.closest('button,.rq-panel')) {
+        const c = toqueACasilla(ev); ev.preventDefault();
+        if (c && celda(c[0], c[1]) !== 1 && c[0] > 0 && c[1] > 0 && c[0] < L.cols - 1 && c[1] < L.rows - 1) { soltarCampana(c[0], c[1]); return; }
+        decir('Ahí no: toca un suelo del dojo', 1.4); return;
+      }
       if(!esVillano()&&mapaExplorador&&mapaGeo) {
         const [x,y]=aUnidades(ev),m=mapaGeo;
         if(x>=m.ox&&x<=m.ox+m.w&&y>=m.oy&&y<=m.oy+m.hh)return;
@@ -4417,15 +4776,16 @@
     _agua: () => h && [h.enAgua, +h.energia.toFixed(2), floor(h.x / T), floor(h.y / T)],
     _ganarPiso: () => { if (torre) { gemasPiso = 99; torre.obj.hechos = 99; } },
     _terminarPiso: () => { if (fase === 'jugando') terminarRonda(); },   // solo para pruebas
+    _pelea: () => { if (fase === 'aldea' && zonaId !== 'aldea') iniciarPelea(); }, _vetas: () => vetas.map(v => [v.tx, v.ty, v.agotada]),
     _torre: () => torre && { piso: ronda, obj: torre.obj, mods: torre.mods, botin: torre.botin, jefe: torre.jefe && torre.jefe.jefe.nombre, espectros: espectros.length, faro: torre.faro.length, faroPos: torre.faro.map(f => [f.tx, f.ty, f.apagado]) },
     _panel: p => { panelMundo = p; pintarUI(); },
     _cofres: () => cofres.map(c => [c.tx, c.ty, c.abierto]),
     _gemas: () => gemas.filter(g2 => g2.estado === 'suelo').map(g2 => [g2.tx, g2.ty, g2.valor]),
     _tp: (x, y) => { if (h) { h.x = (x + .5) * T; h.y = (y + .5) * T; } },   // solo para pruebas: coloca al héroe en una casilla
     setPlayer: n => { jugador = String(n || '').slice(0, 14); pintarUI(); }, aldea: irAldea, accion,
-    get progreso() { return prog; }, borrarProgreso: () => { prog = progNuevo(); recalcularEquipo(); guardarProg(); }, darPuntos: n => { prog.puntos += n; guardarProg(); },
+    get progreso() { return prog; }, borrarProgreso: () => { prog = progNuevo(); recalcularEquipo(); guardarProg(); }, darPuntos: n => { prog.puntos += n; guardarProg(); }, _recalcular: () => recalcularEquipo(),
     start: empezar, menu: irMenu, pause: pausar,
-    get state() { return { zone: zonaId, phase: fase, side: bando, captures: capturas, egg: !!prog.huevo, music: Banda.sonando, dialog: dlg && dlg.lineas[dlg.i], near: cerca && (cerca.npc ? cerca.npc.id : 'puerta'), weapon: prog.arma, weaponCd: armaCd, player: jugador, teleporting: !!tp, mode: 'solo', score: puntos, round: ronda, timeLeft: tiempo, map: nivelActual, hero: h && { x: h.x, y: h.y, tx: floor(h.x / T), ty: floor(h.y / T), carga: h.carga[0]?.valor ?? null, gemas: h.carga.length, capacidad: capacidadCarga() }, espectros: espectros.map(e => ({ estado: e.estado, tx: floor(e.x / T), ty: floor(e.y / T) })) }; }
+    get state() { return { zone: zonaId, phase: fase, side: bando, captures: capturas, egg: !!prog.huevo, music: Banda.sonando, dialog: dlg && dlg.lineas[dlg.i], near: cerca && (cerca.npc ? cerca.npc.id : 'puerta'), weapon: prog.arma, weaponCd: (cds[prog.arma]||0), player: jugador, teleporting: !!tp, mode: 'solo', score: puntos, round: ronda, timeLeft: tiempo, map: nivelActual, hero: h && { x: h.x, y: h.y, tx: floor(h.x / T), ty: floor(h.y / T), carga: h.carga[0]?.valor ?? null, gemas: h.carga.length, capacidad: capacidadCarga() }, espectros: espectros.map(e => ({ estado: e.estado, tx: floor(e.x / T), ty: floor(e.y / T) })) }; }
   };
   { const arranca = () => { const el = document.getElementById('juego'); if (el && el.dataset.auto !== 'no' && !el.classList.contains('rq')) montar(el); }; if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arranca); else arranca(); }
 })();

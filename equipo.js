@@ -22,7 +22,7 @@ const EQUIPO = (() => {
   item('shide','Capa del Peregrino','capa','♧','Épico',{defensa:6},'Dos piezas del Peregrino dan +0,25 s de aguante. Tres añaden +4 % de hallazgo.');
   item('kintsugi','Anillo del Peregrino','anillo','◌','Épico',{fortuna:6},'Dos piezas del Peregrino dan +0,25 s de aguante. Tres añaden +4 % de hallazgo.');
   item('mascara','Máscara del Peregrino','cabeza','◭','Legendario',{sigilo:1},'Dos piezas del Peregrino dan +0,25 s de aguante. Tres añaden +4 % de hallazgo.');
-  const materiales = { carbon:'Carbón de cedro', cobre:'Cobre de la compuerta', jade:'Jade lunar' };
+  const materiales = { carbon:'Lingote de hierro', cobre:'Lingote de cobre', jade:'Jade pulido' };   // v0.69: se consiguen refinando mineral en la fragua
   const botin = [
     {objetos:['kasa','sandalias','cinta','katana'], materiales:{carbon:2}, xp:65, monedas:30},
     {objetos:['capa','loto','escama','bokken'], materiales:{carbon:1,cobre:2}, xp:100, monedas:50},
@@ -34,9 +34,9 @@ const EQUIPO = (() => {
     rio:{nombre:'Río', texto:'El filo seguirá el ritmo del agua.', atributo:'recarga', valor:5}
   };
   const grados = [
-    {nombre:'Despertar', material:'carbon', monedas:20, nivel:1, pasos:['Soplar las brasas','Grabar el juramento','Sumergir el filo']},
-    {nombre:'Memoria', material:'cobre', monedas:40, nivel:2, pasos:['Calentar el cobre','Ajustar la guarda','Sumergir el filo']},
-    {nombre:'Nombre verdadero', material:'jade', monedas:70, nivel:3, pasos:['Abrir la veta lunar','Pronunciar su nombre','Sellar el juramento']}
+    {nombre:'Despertar', material:'carbon', cantidad:2, ataque:6, monedas:40, nivel:2, pasos:['Soplar las brasas','Grabar el juramento','Sumergir el filo']},
+    {nombre:'Memoria', material:'cobre', cantidad:3, ataque:9, monedas:120, nivel:5, pasos:['Calentar el cobre','Ajustar la guarda','Sumergir el filo']},
+    {nombre:'Nombre verdadero', material:'jade', cantidad:3, ataque:14, monedas:300, nivel:8, pasos:['Abrir la veta lunar','Pronunciar su nombre','Sellar el juramento']}
   ];
   function encaja(objeto, ranura) {
     return objeto.tipo === ranura || (objeto.tipo === 'anillo' && ranura.startsWith('anillo'));

@@ -1,7 +1,7 @@
 // SW.JS — guarda TODO el juego en el móvil la primera vez, para jugar SIN internet.
 // Solo el modo online (amigos, dojo a dos) necesita conexión.
 // Al cambiar de versión, sube el número de CACHE para que los móviles bajen lo nuevo.
-const CACHE = 'reliquias-v065';
+const CACHE = 'reliquias-v069';
 const ARCHIVOS = [
 "./",
 "aldea.js",
@@ -149,6 +149,33 @@ const ARCHIVOS = [
 "config.js",
 "economia.js",
 "final.js",
+"combate.js",
+"assets/combate/fondo-bosque.webp",
+"assets/combate/fondo-santuario.webp",
+"assets/combate/forja-taller.webp",
+"assets/combate/m-amanita.webp",
+"assets/combate/m-amanitaroja.webp",
+"assets/combate/m-capirote.webp",
+"assets/combate/m-cervato.webp",
+"assets/combate/m-ciervo.webp",
+"assets/combate/m-cristalito.webp",
+"assets/combate/m-espiral.webp",
+"assets/combate/m-farolero.webp",
+"assets/combate/m-garza.webp",
+"assets/combate/m-gatohierba.webp",
+"assets/combate/m-golemcristal.webp",
+"assets/combate/m-granoso.webp",
+"assets/combate/m-jabali.webp",
+"assets/combate/m-kitsune.webp",
+"assets/combate/m-mascara.webp",
+"assets/combate/m-musgoespiral.webp",
+"assets/combate/m-osezno.webp",
+"assets/combate/m-pelusa.webp",
+"assets/combate/m-seta.webp",
+"assets/combate/m-setalarga.webp",
+"assets/combate/m-tortuga.webp",
+"assets/combate/m-tortuseta.webp",
+"assets/combate/m-velo.webp",
 "equipo.js",
 "frases-carga.js",
 "index.html",
